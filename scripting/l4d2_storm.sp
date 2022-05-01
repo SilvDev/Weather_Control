@@ -1,6 +1,6 @@
 /*
 *	Weather Control
-*	Copyright (C) 2021 Silvers
+*	Copyright (C) 2022 Silvers
 *
 *	This program is free software: you can redistribute it and/or modify
 *	it under the terms of the GNU General Public License as published by
@@ -18,12 +18,12 @@
 
 
 
-#define PLUGIN_VERSION		"1.13"
+#define PLUGIN_VERSION		"1.14"
 
 /*======================================================================================
 	Plugin Info:
 
-*	Name	:	[L4D2] Weather Control
+*	Name	:	[L4D & L4D2] Weather Control
 *	Author	:	SilverShot
 *	Descrp	:	Create storms, lightning, fog, rain, wind, changes the skybox, sun and background colors.
 *	Link	:	https://forums.alliedmods.net/showthread.php?t=184890
@@ -31,6 +31,38 @@
 
 ========================================================================================
 	Change Log:
+
+1.14 (26-Mar-2022)
+	- Added cvar "l4d2_storm_time" to change the maps light style according to the server time.
+	- Added command "sm_stormpreset" to display a menu for selecting different presets (does not affect skybox).
+	- Added command "sm_stormconfig" to display the currently loaded section from the data config.
+	- Added command "sm_snows" to toggle the Snow effect.
+
+	>> L4D1 support:
+	- Plugin now supports L4D1!
+	- The plugin filename and cvars will remain prefixed with "l4d2" to keep compatibility.
+	- Many sound files and particles are missing. Sound files have been attached to the post for L4D1.
+	- Server owners will have to find their own way of downloading these to clients. I will not provide support.
+
+	- Merged changes thanks to "Dragokas":
+
+	1.8.5 (fork by Dragokas) - (19-Jun-2021)
+		- No need to define default skybox any more. It is detected automatically.
+
+	1.8.4 (fork by Dragokas)
+		- L4D1 compatibility: removed g_iStormLayer and g_iVoip entities.
+
+	1.8.3 (fork by Dragokas) private
+		- Added downloading skyboxes to client depending on current map they used
+
+	1.8.2 (fork by Dragokas)
+		- Added changing daylight time according to the real time in server (require testing).
+
+	1.8.1 (fork by Dragokas)
+		- Added basic support for L4D1.
+		- Unlocked ability to call "sm_" commands from server console or 3d-party plugins.
+		- PARTICLE_LIGHT1 and PARTICLE_LIGHT2 removed when L4D1 is run (these particles are absent).
+		- Added checking for map start before CreateEntityByName call (CreateWind).
 
 1.13 (30-Nov-2021)
 	- Added data config key "time_of_day" to modify the servers "sv_force_time_of_day" cvar value. Requested by "EternalStar".
@@ -115,8 +147,10 @@
 
 #define CVAR_FLAGS			FCVAR_NOTIFY
 #define CHAT_TAG			"\x03[STORM] \x05"
-#define CONFIG_SETTINGS		"data/l4d2_storm.cfg"
-#define CONFIG_TRIGGERS		"data/l4d2_storm_triggers.cfg"
+#define CONFIG_SETTINGS1	"data/l4d1_storm.cfg"
+#define CONFIG_SETTINGS2	"data/l4d2_storm.cfg"
+#define CONFIG_TRIGGERS1	"data/l4d1_storm_triggers.cfg"
+#define CONFIG_TRIGGERS2	"data/l4d2_storm_triggers.cfg"
 
 #define MODEL_BOUNDING		"models/props/cs_militia/silo_01.mdl"
 
@@ -163,8 +197,6 @@
 #define	SOUND_WIND7			"ambient/ambience/rainscapes/rain/crucial_wind_rain_loop.wav"
 #define	SOUND_WIND8			"ambient/ambience/rainscapes/rain/debris_loop.wav"
 
-#define MAX_ALLOWED			10
-#define MAX_ENTITIES		16
 #define MAX_TRIGGERS		7
 #define	MAX_RAIN			8
 #define	MAX_FOG				16
@@ -180,15 +212,15 @@ enum
 }
 
 Handle g_hTimerEndStorm, g_hTimerTimeout, g_hTimerTrigger;
-ConVar g_hCvarAllow, g_hCvarMPGameMode, g_hCvarMixer, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarPost, g_hCvarRand, g_hCvarSkyName, g_hCvarStyle, g_hCvarTimeOfDay;
-int g_iChance, g_iCvarMixer, g_iCvarRand, g_iCvarStyle, g_iLateLoad, g_iPlayerSpawn, g_iRandom, g_iReset, g_iRoundStart, g_iStarted, g_iStormState;
+ConVar g_hCvarAllow, g_hCvarMPGameMode, g_hCvarMixer, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarPost, g_hCvarRand, g_hCvarSkyName, g_hCvarStyle, g_hCvarTime, g_hCvarTimeOfDay;
+int g_iChance, g_iCvarMixer, g_iCvarRand, g_iCvarStyle, g_iCvarTime, g_iLateLoad, g_iPlayerSpawn, g_iRandom, g_iReset, g_iRoundStart, g_iStarted, g_iStormState;
 bool g_bCvarAllow, g_bMapStarted, g_bLoaded;
 float g_fCvarPost, g_fCfgPostIdle, g_fCfgPostStorm;
 
-// Menu // Trigger boxes // Light Style
+// Menu // Trigger boxes // Light Style // Preset Selection
 Handle g_hTimerBeam;
-Menu g_hMenuMain, g_hMenuPos, g_hMenuVMaxs, g_hMenuVMins;
-int g_iHaloMaterial, g_iLaserMaterial, g_iTriggerCount, g_iTriggerSelected, g_iLightStyle[MAXPLAYERS+1], g_iTriggerCfgIndex[MAXPLAYERS+1], g_iTriggers[MAX_TRIGGERS];
+Menu g_hMenuMain, g_hMenuPos, g_hMenuVMaxs, g_hMenuVMins, g_hMenuPreset;
+int g_iHaloMaterial, g_iLaserMaterial, g_iTriggerCount, g_iTriggerSelected, g_iLightStyle[MAXPLAYERS+1], g_iTriggerCfgIndex[MAXPLAYERS+1], g_iTriggers[MAX_TRIGGERS], g_iPresetLoad;
 
 // Fog: saved // data settings
 int g_iSunSaved = -1;
@@ -205,6 +237,11 @@ int g_iCfgFinale, g_iCfgForever, g_iCfgHorde, g_iCfgPanic, g_iCfgScavenge, g_iCf
 
 char g_sConfigSection[64];
 
+// L4D1 support
+bool g_bLeft4Dead2 = false;
+
+StringMap g_smMapSky;
+
 
 
 // ====================================================================================================
@@ -212,7 +249,7 @@ char g_sConfigSection[64];
 // ====================================================================================================
 public Plugin myinfo =
 {
-	name = "[L4D2] Weather Control",
+	name = "[L4D & L4D2] Weather Control",
 	author = "SilverShot",
 	description = "Create storms, lightning, fog, rain, wind, changes the skybox, sun and background colors.",
 	version = PLUGIN_VERSION,
@@ -222,9 +259,11 @@ public Plugin myinfo =
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
 	EngineVersion test = GetEngineVersion();
-	if( test != Engine_Left4Dead2 )
+	if( test == Engine_Left4Dead ) g_bLeft4Dead2 = false;
+	else if( test == Engine_Left4Dead2 ) g_bLeft4Dead2 = true;
+	else
 	{
-		strcopy(error, err_max, "Plugin only supports Left 4 Dead 2.");
+		strcopy(error, err_max, "Plugin only supports Left 4 Dead 1 & 2.");
 		return APLRes_SilentFailure;
 	}
 
@@ -235,9 +274,12 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 public void OnPluginStart()
 {
 	char sPath[PLATFORM_MAX_PATH];
-	BuildPath(Path_SM, sPath, sizeof(sPath), CONFIG_SETTINGS);
+	BuildPath(Path_SM, sPath, sizeof(sPath), g_bLeft4Dead2 ? CONFIG_SETTINGS2 : CONFIG_SETTINGS1);
 	if( FileExists(sPath) == false )
 		SetFailState("Plugin requires data file: %s.", sPath);
+
+	g_smMapSky = new StringMap();
+	GetSkyBoxes();
 
 	g_hCvarSkyName = FindConVar("sv_skyname");
 	if( g_hCvarSkyName == null )
@@ -248,24 +290,29 @@ public void OnPluginStart()
 	g_hCvarModes =	CreateConVar(		"l4d2_storm_modes",			"",				"Turn on the plugin in these game modes, separate by commas (no spaces). (Empty = all).", CVAR_FLAGS);
 	g_hCvarModesOff =	CreateConVar(	"l4d2_storm_modes_off",		"",				"Turn off the plugin in these game modes, separate by commas (no spaces). (Empty = none).", CVAR_FLAGS );
 	g_hCvarModesTog = CreateConVar(		"l4d2_storm_modes_tog",		"0",			"Turn on the plugin in these game modes. 0=All, 1=Coop, 2=Survival, 4=Versus, 8=Scavenge. Add numbers together.", CVAR_FLAGS );
-	g_hCvarMixer =	CreateConVar(		"l4d2_storm_mixer",			"1",			"0=Off, 1=Turn down the voip voice transmit volume during the storm state.", CVAR_FLAGS);
+	if( g_bLeft4Dead2 )
+		g_hCvarMixer =	CreateConVar(	"l4d2_storm_mixer",			"1",			"0=Off, 1=Turn down the voip voice transmit volume during the storm state.", CVAR_FLAGS);
 	g_hCvarPost =	CreateConVar(		"l4d2_storm_post",			"-0.25",		"0.0=Off. Applies post process effect during the storm state. Values near 0 will blur, lower values cause other effects.", CVAR_FLAGS);
 	g_hCvarRand =	CreateConVar(		"l4d2_storm_random",		"1",			"0=Off. 1=On. Select a new weather preset from the random section when changing chapter.", CVAR_FLAGS);
 	g_hCvarStyle =	CreateConVar(		"l4d2_storm_style",			"1",			"Method to refresh map light style: 0=Old (0.2 sec low FPS, does not light the whole world). 1=Almost always lights the whole world (0.5 sec low FPS), 2=Lights the whole world (1 sec low FPS).", CVAR_FLAGS);
+	g_hCvarTime =	CreateConVar(		"l4d2_storm_time",			"-1",			"-1=Off. Your servers time offset from UTC time, the maps light style will change depending on the servers time of day. This will overwrite the configs light style setting.", CVAR_FLAGS);
 	CreateConVar(						"l4d2_storm_version",		PLUGIN_VERSION,	"Weather Control plugin version.", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	AutoExecConfig(true,				"l4d2_storm");
 
-	g_hCvarTimeOfDay = FindConVar("sv_force_time_of_day");
+	if( g_bLeft4Dead2 )
+		g_hCvarTimeOfDay = FindConVar("sv_force_time_of_day");
 	g_hCvarMPGameMode = FindConVar("mp_gamemode");
 	g_hCvarMPGameMode.AddChangeHook(ConVarChanged_Allow);
 	g_hCvarAllow.AddChangeHook(ConVarChanged_Allow);
 	g_hCvarModes.AddChangeHook(ConVarChanged_Allow);
 	g_hCvarModesOff.AddChangeHook(ConVarChanged_Allow);
 	g_hCvarModesTog.AddChangeHook(ConVarChanged_Allow);
-	g_hCvarMixer.AddChangeHook(ConVarChanged_Cvars);
+	if( g_bLeft4Dead2 )
+		g_hCvarMixer.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarPost.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarRand.AddChangeHook(ConVarChanged_Cvars);
 	g_hCvarStyle.AddChangeHook(ConVarChanged_Cvars);
+	g_hCvarTime.AddChangeHook(ConVarChanged_Cvars);
 
 	RegAdminCmd("sm_storm",			CmdStormMenu,		ADMFLAG_ROOT,	"Opens the Storm menu.");
 	RegAdminCmd("sm_stormstart",	CmdStormStart,		ADMFLAG_ROOT,	"Starts the Storm if possible.");
@@ -273,6 +320,7 @@ public void OnPluginStart()
 	RegAdminCmd("sm_stormrefresh",	CmdStormRefresh,	ADMFLAG_ROOT,	"Refresh the plugin, reloading the config and storm.");
 	RegAdminCmd("sm_stormreset",	CmdStormReset,		ADMFLAG_ROOT,	"Stops the storm and resets the weather to the maps default.");
 	RegAdminCmd("sm_stormconfig",	CmdStormConfig,		ADMFLAG_ROOT,	"Display the currently loaded section from the data config.");
+	RegAdminCmd("sm_stormpreset",	CmdStormPreset,		ADMFLAG_ROOT,	"Displays a menu listing presets from the random section in the data config. Allowing you to select and change the current storm preset.");
 	RegAdminCmd("sm_lightning",		CmdLightning,		ADMFLAG_ROOT,	"Creates a Lightning Strike.");
 	RegAdminCmd("sm_background",	CmdBackground,		ADMFLAG_ROOT,	"Set the background color. Reset with no args. Set the color with three values between 0-255 separated by spaces: sm_background <r> <g> <b>.");
 	RegAdminCmd("sm_farz",			CmdFarZ,			ADMFLAG_ROOT,	"Set the maps far z-clip. This will make the map stop rendering stuff after the specified distance. Usage: sm_farz <distance>.");
@@ -325,6 +373,29 @@ public void OnPluginStart()
 	g_hMenuPos.AddItem("", "SAVE");
 	g_hMenuPos.SetTitle("Storm - Set Origin");
 	g_hMenuPos.ExitBackButton = true;
+
+	// Presets menu
+	KeyValues hFile = ConfigOpen();
+	if( hFile != null && hFile.JumpToKey("random") == true )
+	{
+		g_hMenuPreset = new Menu(PresetMenuHandler);
+		g_hMenuPreset.ExitBackButton = true;
+
+		char sTemp[64];
+		int count = hFile.GetNum("count");
+
+		for( int i = 1; i <= count; i++ )
+		{
+			IntToString(i, sTemp, sizeof(sTemp));
+			hFile.GetString(sTemp, sTemp, sizeof(sTemp));
+
+			if( sTemp[0] )
+			{
+				g_hMenuPreset.AddItem(sTemp, sTemp);
+			}
+		}
+	}
+	delete hFile;
 }
 
 public void OnPluginEnd()
@@ -398,10 +469,16 @@ public void OnMapStart()
 	PrecacheSound(SOUND_WIND8, true);
 
 	PrecacheParticle(PARTICLE_FIRE);
-	PrecacheParticle(PARTICLE_FOG);
-	PrecacheParticle(PARTICLE_GLOW);
-	PrecacheParticle(PARTICLE_LIGHT1);
-	PrecacheParticle(PARTICLE_LIGHT2);
+
+	if( g_bLeft4Dead2 )
+	{
+		PrecacheParticle(PARTICLE_FOG);
+		PrecacheParticle(PARTICLE_GLOW);
+		PrecacheParticle(PARTICLE_LIGHT1);
+		PrecacheParticle(PARTICLE_LIGHT2);
+	}
+
+	DownloadSkyboxes();
 
 	#if DEBUG_LOGS
 	char sMap[64];
@@ -409,6 +486,99 @@ public void OnMapStart()
 	PrintToLog("-----");
 	PrintToLog("Map Start: [%s]", sMap);
 	#endif
+}
+
+void DownloadSkyboxes()
+{
+	KeyValues hFile = ConfigOpen();
+
+	if( hFile != null )
+	{
+		char sSkybox[32];
+		char sMap[64];
+		GetCurrentMap(sMap, sizeof(sMap));
+
+		if( ConfigJumpA(hFile, sMap) )
+		{
+			hFile.GetString("skybox", sSkybox, sizeof(sSkybox));
+
+			if( sSkybox[0] != '\0' )
+			{
+				if ( !IsDefaultSkybox(sSkybox) )
+				{
+					DownloadSkybox(sSkybox);
+				}
+			}
+		}
+
+		delete hFile;
+	}
+}
+
+stock bool IsDefaultSkybox(char[] sSky)
+{
+	int v;
+	return g_smMapSky.GetValue(sSky, v);
+}
+
+void GetSkyBoxes()
+{
+	int iLen;
+	char sSky[64];
+	FileType fileType;
+	DirectoryListing hDir;
+
+	hDir = OpenDirectory("materials/skybox", true, NULL_STRING); // virtual + real
+	if( hDir )
+	{
+		while( hDir.GetNext(sSky, sizeof sSky, fileType))
+		{
+			if( fileType == FileType_File )
+			{
+				iLen = strlen(sSky);
+
+				if( iLen > 6 )
+				{
+					sSky[iLen - 6] = '\0';
+					g_smMapSky.SetValue(sSky, 1);
+				}
+			}
+		}
+		delete hDir;
+	}
+
+	hDir = OpenDirectory("materials/skybox", false, NULL_STRING); // -remove real
+	if( hDir )
+	{
+		while( hDir.GetNext(sSky, sizeof sSky, fileType))
+		{
+			if( fileType == FileType_File )
+			{
+				iLen = strlen(sSky);
+
+				if( iLen > 6 )
+				{
+					sSky[iLen - 6] = '\0';
+					g_smMapSky.Remove(sSky);
+				}
+			}
+		}
+		delete hDir;
+	}
+}
+
+void DownloadSkybox(char[] sSkybox)
+{
+	static char sPath[PLATFORM_MAX_PATH];
+	char Pref[][] = {"bk", "Bk", "dn", "Dn", "ft", "Ft", "lf", "Lf", "rt", "Rt", "up", "Up"};
+	for( int i = 0; i < sizeof(Pref); i++ )
+	{
+		FormatEx(sPath, sizeof(sPath), "materials/skybox/%s%s.vmt", sSkybox, Pref[i]);
+		if( FileExists(sPath) ) AddFileToDownloadsTable(sPath);
+
+		FormatEx(sPath, sizeof(sPath), "materials/skybox/%s%s.vtf", sSkybox, Pref[i]);
+		if( FileExists(sPath) ) AddFileToDownloadsTable(sPath);
+	}
 }
 
 public void OnMapEnd()
@@ -436,7 +606,10 @@ void ResetPlugin()
 	PrintToLog("ResetPlugin");
 	#endif
 
+	int time = g_iCvarTime;
+	g_iCvarTime = -1;
 	ChangeLightStyle("m");
+	g_iCvarTime = time;
 	SetBackground(true);
 	StopAmbientSound();
 
@@ -595,7 +768,7 @@ void ResetFog()
 	if( IsValidEntRef(g_iFog) )
 	{
 		RemoveEntity(g_iFog);
-		g_iFog  = 0;
+		g_iFog = 0;
 	}
 
 	int entity = -1;
@@ -619,7 +792,10 @@ void ResetFog()
 				SetEntPropFloat(entity, Prop_Send, "m_fog.end", g_fFogStolen[i][1]);
 				SetEntPropFloat(entity, Prop_Send, "m_fog.maxdensity", g_fFogStolen[i][2]);
 				SetEntPropFloat(entity, Prop_Send, "m_fog.farz", g_fFogStolen[i][3]);
-				SetEntPropFloat(entity, Prop_Send, "m_fog.skyboxFogFactor", g_fFogStolen[i][4]);
+				if( g_bLeft4Dead2 )
+				{
+					SetEntPropFloat(entity, Prop_Send, "m_fog.skyboxFogFactor", g_fFogStolen[i][4]);
+				}
 				SetEntPropFloat(entity, Prop_Send, "m_fog.startLerpTo", g_fFogStolen[i][5]);
 				SetEntPropFloat(entity, Prop_Send, "m_fog.endLerpTo", g_fFogStolen[i][6]);
 				SetEntPropFloat(entity, Prop_Send, "m_fog.maxdensityLerpTo", g_fFogStolen[i][7]);
@@ -701,32 +877,40 @@ public Action TimerPlaySound(Handle timer, any client)
 
 void HookEvents()
 {
-	HookEvent("gascan_pour_completed",		Event_PourGas,			EventHookMode_PostNoCopy);
-	HookEvent("begin_scavenge_overtime",	Event_Scavenge,			EventHookMode_PostNoCopy);
-	HookEvent("finale_vehicle_incoming",	Event_FinaleIn,			EventHookMode_PostNoCopy);
-	HookEvent("create_panic_event",			Event_PanicAlert,		EventHookMode_PostNoCopy);
-	HookEvent("tank_spawn",					Event_TankSpawn,		EventHookMode_PostNoCopy);
-	HookEvent("player_death",				Event_TankKilled);
-	HookEvent("witch_killed",				Event_WitchKilled);
-	HookEvent("witch_harasser_set",			Event_WitchAlert,		EventHookMode_PostNoCopy);
-	HookEvent("round_end",					Event_RoundEnd,			EventHookMode_PostNoCopy);
-	HookEvent("round_start",				Event_RoundStart,		EventHookMode_PostNoCopy);
-	HookEvent("player_spawn",				Event_PlayerSpawn);
+	if( g_bLeft4Dead2 )
+	{
+		HookEvent("finale_vehicle_incoming",	Event_FinaleIn,			EventHookMode_PostNoCopy);
+		HookEvent("gascan_pour_completed",		Event_PourGas,			EventHookMode_PostNoCopy);
+		HookEvent("begin_scavenge_overtime",	Event_Scavenge,			EventHookMode_PostNoCopy);
+	}
+
+	HookEvent("create_panic_event",				Event_PanicAlert,		EventHookMode_PostNoCopy);
+	HookEvent("tank_spawn",						Event_TankSpawn,		EventHookMode_PostNoCopy);
+	HookEvent("player_death",					Event_TankKilled);
+	HookEvent("witch_killed",					Event_WitchKilled);
+	HookEvent("witch_harasser_set",				Event_WitchAlert,		EventHookMode_PostNoCopy);
+	HookEvent("round_end",						Event_RoundEnd,			EventHookMode_PostNoCopy);
+	HookEvent("round_start",					Event_RoundStart,		EventHookMode_PostNoCopy);
+	HookEvent("player_spawn",					Event_PlayerSpawn);
 }
 
 void UnhookEvents()
 {
-	UnhookEvent("gascan_pour_completed",	Event_PourGas,			EventHookMode_PostNoCopy);
-	UnhookEvent("begin_scavenge_overtime",	Event_Scavenge,			EventHookMode_PostNoCopy);
-	UnhookEvent("finale_vehicle_incoming",	Event_FinaleIn,			EventHookMode_PostNoCopy);
-	UnhookEvent("create_panic_event",		Event_PanicAlert,		EventHookMode_PostNoCopy);
-	UnhookEvent("tank_spawn",				Event_TankSpawn,		EventHookMode_PostNoCopy);
-	UnhookEvent("player_death",				Event_TankKilled);
-	UnhookEvent("witch_killed",				Event_WitchKilled);
-	UnhookEvent("witch_harasser_set",		Event_WitchAlert,		EventHookMode_PostNoCopy);
-	UnhookEvent("round_end",				Event_RoundEnd,			EventHookMode_PostNoCopy);
-	UnhookEvent("round_start",				Event_RoundStart,		EventHookMode_PostNoCopy);
-	UnhookEvent("player_spawn",				Event_PlayerSpawn);
+	if( g_bLeft4Dead2 )
+	{
+		UnhookEvent("finale_vehicle_incoming",	Event_FinaleIn,			EventHookMode_PostNoCopy);
+		UnhookEvent("gascan_pour_completed",	Event_PourGas,			EventHookMode_PostNoCopy);
+		UnhookEvent("begin_scavenge_overtime",	Event_Scavenge,			EventHookMode_PostNoCopy);
+	}
+
+	UnhookEvent("create_panic_event",			Event_PanicAlert,		EventHookMode_PostNoCopy);
+	UnhookEvent("tank_spawn",					Event_TankSpawn,		EventHookMode_PostNoCopy);
+	UnhookEvent("player_death",					Event_TankKilled);
+	UnhookEvent("witch_killed",					Event_WitchKilled);
+	UnhookEvent("witch_harasser_set",			Event_WitchAlert,		EventHookMode_PostNoCopy);
+	UnhookEvent("round_end",					Event_RoundEnd,			EventHookMode_PostNoCopy);
+	UnhookEvent("round_start",					Event_RoundStart,		EventHookMode_PostNoCopy);
+	UnhookEvent("player_spawn",					Event_PlayerSpawn);
 }
 
 public void Event_PourGas(Event event, const char[] name, bool dontBroadcast)
@@ -840,14 +1024,14 @@ bool IsFinalMap()
 
 bool IsStartOrEndMap()
 {
-    int iCount;
-    int i = -1;
-    while( (i = FindEntityByClassname(i, "info_landmark")) != INVALID_ENT_REFERENCE )
+	int iCount;
+	int i = -1;
+	while( (i = FindEntityByClassname(i, "info_landmark")) != INVALID_ENT_REFERENCE )
 	{
-        iCount++;
-    }
+		iCount++;
+	}
 
-    return (iCount == 1);
+	return (iCount == 1);
 }
 
 
@@ -869,13 +1053,58 @@ public Action TimerLightStyle(Handle timer, any userid)
 
 void ChangeLightStyle(char[] lightstring, int client = 0)
 {
-	if( g_iStarted == 2 && lightstring[0] )
+	if( g_iStarted == 2 && (g_iCvarTime != -1 || lightstring[0]) )
 	{
 		#if DEBUG_LOGS
-		PrintToLog("ChangeLightStyle [%d] [%s]", client, lightstring);
+		PrintToLog("ChangeLightStyle [%d] [%s] (UTC %d)", client, lightstring, g_iCvarTime);
 		#endif
 
-		SetLightStyle(0, lightstring);
+		if( g_iCvarTime != -1 )
+		{
+			int time = GetTime();
+			int hours = (time / 3600) % 24 + g_iCvarTime; // UTC+2 (Kyiv)
+
+			/*
+			06:00 - 11:00 - m
+			11:00 - 14:00 - z
+			14:00 - 16:00 - m
+			16:00 - 23:00 - b
+			23:00 - 06:00 - a
+			*/
+
+			char mylightlevel[5];
+
+			if( hours >= 4 && hours < 6 )
+			{
+				mylightlevel = "b";
+			}
+			else if( hours >= 6 && hours < 11 )
+			{
+				mylightlevel = "m";
+			}
+			else if( hours >= 11 && hours < 14 )
+			{
+				mylightlevel = "z";
+			}
+			else if( hours >= 14 && hours < 16 )
+			{
+				mylightlevel = "m";
+			}
+			else if( hours >= 16 && hours < 23 )
+			{
+				mylightlevel = "b";
+			}
+			else
+			{
+				mylightlevel = "a";
+			}
+
+			SetLightStyle(0, mylightlevel);
+		}
+		else
+		{
+			SetLightStyle(0, lightstring);
+		}
 
 		// This refreshes and updates the entire map with the new light style.
 		int entity = CreateEntityByName("light_dynamic");
@@ -980,7 +1209,7 @@ void ChangeLightStyle(char[] lightstring, int client = 0)
 		}
 
 		#if DEBUG_LOGS
-		PrintToLog("ChangeLightStyle End [%d] [%s]", client, lightstring);
+		PrintToLog("ChangeLightStyle End [%d] [%s] (UTC %d)", client, lightstring, g_iCvarTime);
 		#endif
 	}
 }
@@ -1149,10 +1378,12 @@ public void ConVarChanged_Cvars(Handle convar, const char[] oldValue, const char
 
 void GetCvars()
 {
-	g_iCvarMixer =	g_hCvarMixer.IntValue;
+	if( g_bLeft4Dead2 )
+		g_iCvarMixer =	g_hCvarMixer.IntValue;
 	g_fCvarPost =	g_hCvarPost.FloatValue;
 	g_iCvarRand =	g_hCvarRand.IntValue;
 	g_iCvarStyle =	g_hCvarStyle.IntValue;
+	g_iCvarTime =	g_hCvarTime.IntValue;
 }
 
 void IsAllowed()
@@ -1378,14 +1609,20 @@ void CreateSkyCamera(int color1, int color2)
 
 		iSkyCamData[0] = GetEntProp(g_iSkyCamera, Prop_Data, "m_bUseAngles");
 		iSkyCamData[1] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.scale");
-		iSkyCamData[2] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.bClip3DSkyBoxNearToWorldFar");
+		if( g_bLeft4Dead2 )
+		{
+			iSkyCamData[2] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.bClip3DSkyBoxNearToWorldFar");
+		}
 		iSkyCamData[3] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.blend");
 		iSkyCamData[4] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.enable");
 		fSkyCamData[0] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.start");
 		fSkyCamData[1] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.end");
 		fSkyCamData[2] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.maxdensity");
 		fSkyCamData[3] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.HDRColorScale");
-		fSkyCamData[4] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.flClip3DSkyBoxNearToWorldFarOffset");
+		if( g_bLeft4Dead2 )
+		{
+			fSkyCamData[4] = GetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.flClip3DSkyBoxNearToWorldFarOffset");
+		}
 
 		float vAng[3], vPos[3];
 		GetEntPropVector(g_iSkyCamera, Prop_Data, "m_vecOrigin", vPos);
@@ -1399,14 +1636,20 @@ void CreateSkyCamera(int color1, int color2)
 		SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.colorSecondary", color2);
 		SetEntProp(g_iSkyCamera, Prop_Data, "m_bUseAngles", iSkyCamData[0]);
 		SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.scale", iSkyCamData[1]);
-		SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.bClip3DSkyBoxNearToWorldFar", iSkyCamData[2]);
+		if( g_bLeft4Dead2 )
+		{
+			SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.bClip3DSkyBoxNearToWorldFar", iSkyCamData[2]);
+		}
 		SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.blend", iSkyCamData[3]);
 		SetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.enable", iSkyCamData[4]);
 		SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.start", fSkyCamData[0]);
 		SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.end", fSkyCamData[1]);
 		SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.maxdensity", fSkyCamData[2]);
 		SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.HDRColorScale", fSkyCamData[3]);
-		SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.flClip3DSkyBoxNearToWorldFarOffset", fSkyCamData[4]);
+		if( g_bLeft4Dead2 )
+		{
+			SetEntPropFloat(g_iSkyCamera, Prop_Data, "m_skyboxData.flClip3DSkyBoxNearToWorldFarOffset", fSkyCamData[4]);
+		}
 
 		TeleportEntity(g_iSkyCamera, vPos, vAng, NULL_VECTOR);
 		DispatchSpawn(g_iSkyCamera);
@@ -1423,7 +1666,7 @@ public Action CmdStormMenu(int client, int args)
 {
 	if( !client )
 	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
+		ReplyToCommand(client, "[STORM] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
 		return Plugin_Handled;
 	}
 
@@ -1458,18 +1701,49 @@ public Action CmdStormReset(int client, int args)
 
 public Action CmdStormConfig(int client, int args)
 {
-	PrintToChat(client, "%s Config: {%s}.", CHAT_TAG, g_sConfigSection);
+	if( client )
+		PrintToChat(client, "%s Config: {%s}.", CHAT_TAG, g_sConfigSection);
+	else
+		ReplyToCommand(client, "[STORM] Config: {%s}.", g_sConfigSection);
 	return Plugin_Handled;
+}
+
+public Action CmdStormPreset(int client, int args)
+{
+	if( !client )
+	{
+		ReplyToCommand(client, "[STORM] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
+		return Plugin_Handled;
+	}
+
+	if( g_hMenuPreset )
+		g_hMenuPreset.Display(client, MENU_TIME_FOREVER);
+	else
+		PrintToChat(client, "%s No presets in the \"random\" section of the data config.", CHAT_TAG);
+
+	return Plugin_Handled;
+}
+
+public int PresetMenuHandler(Menu menu, MenuAction action, int client, int index)
+{
+	if( action == MenuAction_Select )
+	{
+		menu.GetItem(index, g_sConfigSection, sizeof(g_sConfigSection));
+
+		int menupos = menu.Selection;
+		menu.DisplayAt(client, menupos, MENU_TIME_FOREVER);
+
+		g_iPresetLoad = 1;
+		ResetPlugin();
+		LoadStorm(client);
+		g_iPresetLoad = 0;
+	}
+
+	return 0;
 }
 
 public Action CmdLightning(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	int stormstate = g_iStormState;
 	g_iStormState = STATE_OFF;
 	DisplayLightning(client);
@@ -1479,20 +1753,22 @@ public Action CmdLightning(int client, int args)
 
 public Action CmdBackground(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-	}
-	else if( args == 0 )
+	if( args == 0 )
 	{
 		if( IsValidEntRef(g_iSkyCamera) == true )
 		{
 			CreateSkyCamera(g_iSkyCam[0], g_iSkyCam[1]);
-			PrintToChat(client, "%sBackground color has been reset.", CHAT_TAG);
+			if( client )
+				ReplyToCommand(client, "%sBackground color has been reset.", CHAT_TAG);
+			else
+				ReplyToCommand(client, "[STORM] Background color has been reset.");
 		}
 		else
 		{
-			PrintToChat(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+			if( client )
+				ReplyToCommand(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+			else
+				ReplyToCommand(client, "[STORM] Background error: Cannot find the 'sky_camera' entity. Was never created or has been deleted.");
 		}
 	}
 	else if( args == 3 )
@@ -1502,7 +1778,10 @@ public Action CmdBackground(int client, int args)
 			g_iSkyCamera = FindEntityByClassname(-1, "sky_camera");
 			if( g_iSkyCamera == -1 )
 			{
-				PrintToChat(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+				if( client )
+					ReplyToCommand(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+				else
+					ReplyToCommand(client, "[STORM] Background error: Cannot find the 'sky_camera' entity. Was never created or has been deleted.");
 				return Plugin_Handled;
 			}
 
@@ -1517,19 +1796,17 @@ public Action CmdBackground(int client, int args)
 	}
 	else
 	{
-		PrintToChat(client, "%sUsage: sm_background <no args = reset, or string from a-z.", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sUsage: sm_background [no args = reset, or string from a-z].", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Usage: sm_background [no args = reset, or string from a-z].");
 	}
+
 	return Plugin_Handled;
 }
 
 public Action CmdMapLight(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	if( g_sCfgLightStyle[0] == 0 )
 	{
 		g_sCfgLightStyle = "m";
@@ -1538,19 +1815,36 @@ public Action CmdMapLight(int client, int args)
 
 	if( args == 0 )
 	{
+		int time = g_iCvarTime;
+		g_iCvarTime = -1;
 		ChangeLightStyle("m");
-		PrintToChat(client, "%sMap light style has been reset.", CHAT_TAG);
+		g_iCvarTime = time;
+
+		if( client )
+			ReplyToCommand(client, "%sMap light style has been reset.", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Map light style has been reset.");
 	}
 	else if( args == 1 )
 	{
 		char sTemp[64];
 		GetCmdArg(1, sTemp, sizeof(sTemp));
-		PrintToChat(client, "%sMap light style has been set to '\x03%s\x01'.", CHAT_TAG, sTemp);
+		if( client )
+			ReplyToCommand(client, "%sMap light style has been set to '\x03%s\x01'.", CHAT_TAG, sTemp);
+		else
+			ReplyToCommand(client, "[STORM] Map light style has been set to '%s'.", sTemp);
+
+		int time = g_iCvarTime;
+		g_iCvarTime = -1;
 		ChangeLightStyle(sTemp);
+		g_iCvarTime = time;
 	}
 	else
 	{
-		PrintToChat(client, "%sUsage: sm_maplight <no args = reset, or string from a-z.", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sUsage: sm_maplight <no args = reset, or string from a-z.", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Usage: sm_maplight <no args = reset, or string from a-z.");
 	}
 	return Plugin_Handled;
 }
@@ -1571,28 +1865,31 @@ public Action CmdFarZ(int client, int args)
 	}
 	else
 	{
-		PrintToChat(client, "%sUsage: sm_farz <distance in game units>.", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sUsage: sm_farz <distance in game units>.", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Usage: sm_farz <distance in game units>.");
 	}
 	return Plugin_Handled;
 }
 
 public Action CmdFog(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	if( g_iFogOn == 0 )
 	{
 		CreateFog();
-		PrintToChat(client, "%sFog has been turned '\x03On\x05'", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sFog has been turned '\x03On\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Fog has been turned 'On'");
 	}
 	else if( args == 0 )
 	{
 		ResetFog();
-		PrintToChat(client, "%sFog has been turned '\x03Off\x05'", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sFog has been turned '\x03Off\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Fog has been turned 'Off'");
 	}
 
 	if( args == 3 )
@@ -1615,12 +1912,6 @@ public Action CmdFog(int client, int args)
 
 public Action CmdRain(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	int count;
 	for( int i = 0; i < MAX_RAIN; i++ )
 		if( IsValidEntRef(g_iRains[i]) )
@@ -1644,7 +1935,10 @@ public Action CmdRain(int client, int args)
 			CreateSnow();
 		}
 
-		PrintToChat(client, "%sRain has been turned '\x03Off\x05'", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sRain has been turned '\x03Off\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Rain has been turned 'Off'");
 	}
 	else
 	{
@@ -1658,25 +1952,26 @@ public Action CmdRain(int client, int args)
 		{
 			CreateRain();
 		}
-		PrintToChat(client, "%sRain has been turned '\x03On\x05'", CHAT_TAG);
+
+		if( client )
+			ReplyToCommand(client, "%sRain has been turned '\x03On\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Rain has been turned 'On'");
 	}
 	return Plugin_Handled;
 }
 
 public Action CmdSnow(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	if( IsValidEntRef(g_iSnow) )
 	{
 		RemoveEntity(g_iSnow);
 		g_iSnow = 0;
 
-		PrintToChat(client, "%sSnow has been turned '\x03Off\x05'", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sSnow has been turned '\x03Off\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Snow has been turned 'Off'");
 	}
 	else
 	{
@@ -1690,41 +1985,41 @@ public Action CmdSnow(int client, int args)
 		{
 			CreateSnow();
 		}
-		PrintToChat(client, "%sSnow has been turned '\x03On\x05'", CHAT_TAG);
+
+		if( client )
+			ReplyToCommand(client, "%sSnow has been turned '\x03On\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Snow has been turned 'On'");
 	}
 	return Plugin_Handled;
 }
 
 public Action CmdWind(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	if( IsValidEntRef(g_iWind) )
 	{
 		RemoveEntity(g_iWind);
 		g_iWind = 0;
-		PrintToChat(client, "%sWind has been turned '\x03Off\x05'", CHAT_TAG);
+
+		if( client )
+			ReplyToCommand(client, "%sWind has been turned '\x03Off\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Wind has been turned 'Off'");
 	}
 	else
 	{
 		CreateWind();
-		PrintToChat(client, "%sWind has been turned '\x03On\x05'", CHAT_TAG);
+
+		if( client )
+			ReplyToCommand(client, "%sWind has been turned '\x03On\x05'", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Wind has been turned 'On'");
 	}
 	return Plugin_Handled;
 }
 
 public Action CmdSun(int client, int args)
 {
-	if( !client )
-	{
-		ReplyToCommand(client, "[Storm] Command can only be used %s", IsDedicatedServer() ? "in game on a dedicated server." : "in chat on a Listen server.");
-		return Plugin_Handled;
-	}
-
 	if( args == 0 )
 	{
 		ToggleEnvSun(g_iSunSaved);
@@ -1739,7 +2034,10 @@ public Action CmdSun(int client, int args)
 
 	if( args != 3 )
 	{
-		PrintToChat(client, "%sUsage: sm_sun <r> <g> <b> (values 0-255, eg: sm_sun 255 0 0).", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sUsage: sm_sun <r> <g> <b> (values 0-255, eg: sm_sun 255 0 0).", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Usage: sm_sun <r> <g> <b> (values 0-255, eg: sm_sun 255 0 0).");
 		return Plugin_Handled;
 	}
 
@@ -1764,7 +2062,10 @@ public Action CmdStormSet(int client, int args)
 			g_iSkyCamera = FindEntityByClassname(-1, "sky_camera");
 			if( g_iSkyCamera == -1 )
 			{
-				PrintToChat(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+				if( client )
+					ReplyToCommand(client, "%sBackground error: Cannot find the \x01sky_camera\x06 entity. Was never created or has been deleted.", CHAT_TAG);
+				else
+					ReplyToCommand(client, "[STORM] Background error: Cannot find the 'sky_camera' entity. Was never created or has been deleted.");
 			}
 
 			g_iSkyCam[0] = GetEntProp(g_iSkyCamera, Prop_Data, "m_skyboxData.fog.colorPrimary");
@@ -1791,7 +2092,10 @@ public Action CmdStormSet(int client, int args)
 	}
 	else
 	{
-		PrintToChat(client, "%sUsage: sm_stormset <r> <g> <b> (values 0-255, eg: sm_stormset 255 0 0).", CHAT_TAG);
+		if( client )
+			ReplyToCommand(client, "%sUsage: sm_stormset <r> <g> <b> (values 0-255, eg: sm_stormset 255 0 0).", CHAT_TAG);
+		else
+			ReplyToCommand(client, "[STORM] Usage: sm_stormset <r> <g> <b> (values 0-255, eg: sm_stormset 255 0 0).");
 	}
 
 	return Plugin_Handled;
@@ -2347,9 +2651,9 @@ KeyValues ConfigOpen(int configtype = 0)
 {
 	char sPath[PLATFORM_MAX_PATH];
 	if( configtype == 0 )
-		BuildPath(Path_SM, sPath, sizeof(sPath), CONFIG_SETTINGS);
+		BuildPath(Path_SM, sPath, sizeof(sPath), g_bLeft4Dead2 ? CONFIG_SETTINGS2 : CONFIG_SETTINGS1);
 	else
-		BuildPath(Path_SM, sPath, sizeof(sPath), CONFIG_TRIGGERS);
+		BuildPath(Path_SM, sPath, sizeof(sPath), g_bLeft4Dead2 ? CONFIG_TRIGGERS2 : CONFIG_TRIGGERS1);
 
 	if( !FileExists(sPath) )
 	{
@@ -2381,7 +2685,7 @@ KeyValues ConfigOpen(int configtype = 0)
 void ConfigSave(KeyValues hFile)
 {
 	char sPath[PLATFORM_MAX_PATH];
-	BuildPath(Path_SM, sPath, sizeof(sPath), CONFIG_TRIGGERS);
+	BuildPath(Path_SM, sPath, sizeof(sPath), g_bLeft4Dead2 ? CONFIG_TRIGGERS2 : CONFIG_TRIGGERS1);
 	if( !FileExists(sPath) )
 	{
 		return;
@@ -2441,7 +2745,9 @@ int ConfigJumpA(KeyValues hFile, char sMap[64])
 			}
 			else
 			{
-				strcopy(g_sConfigSection, sizeof(g_sConfigSection), sJump);
+				if( g_iPresetLoad == 0 )
+					strcopy(g_sConfigSection, sizeof(g_sConfigSection), sJump);
+
 				completed_jump = 1;
 			}
 		}
@@ -2546,23 +2852,32 @@ void LoadStorm(int client = 0)
 	if( g_bLoaded && client == 0 )
 		return;
 
-	g_sConfigSection[0] = 0;
+	if( g_iPresetLoad == 0 )
+		g_sConfigSection[0] = 0;
 
 	KeyValues hFile = ConfigOpen();
 
 	if( hFile != null )
 	{
+		int completed_jump;
 		char sMap[64];
-		GetCurrentMap(sMap, sizeof(sMap));
-
-		int completed_jump = ConfigJumpA(hFile, sMap);
-		if( completed_jump )
+		if( g_iPresetLoad == 0 )
 		{
+			GetCurrentMap(sMap, sizeof(sMap));
+
+			completed_jump = ConfigJumpA(hFile, sMap);
+		} else {
+			if( hFile.JumpToKey(g_sConfigSection) == false ) g_iPresetLoad = 0;
+		}
+
+		if( completed_jump || g_iPresetLoad == 1 )
+		{
+
 			#if DEBUG_LOGS
 			PrintToLog("LoadStorm [%s]", sMap);
 			#endif
 
-			if( ConfigChance(client, hFile) == false )
+			if( g_iPresetLoad == 0 && ConfigChance(client, hFile) == false )
 			{
 				delete hFile;
 				return;
@@ -2691,7 +3006,7 @@ void LoadStorm(int client = 0)
 
 			CheckDynamicLightStyle();
 
-			if( g_iCfgTimeOfDay != -1 )
+			if( g_iCfgTimeOfDay != -1 && g_bLeft4Dead2 )
 			{
 				g_hCvarTimeOfDay.IntValue = g_iCfgTimeOfDay;
 			}
@@ -2700,7 +3015,7 @@ void LoadStorm(int client = 0)
 			if( g_iCfgForever == 0 )
 			{
 				// TRIGGERS TO START STORM
-				if( g_iCfgHorde )
+				if( g_iCfgHorde && IsValidEntRef(g_iLogicDirector) )
 				{
 					g_iLogicDirector = CreateEntityByName("logic_director_query");
 					DispatchKeyValue(g_iLogicDirector, "minAngerRange", "1");
@@ -2783,7 +3098,10 @@ void LoadStorm(int client = 0)
 			}
 
 			SetSkyname();
-			CreateTimer(0.1, TimerSetSkyCam);
+			if( g_iPresetLoad == 0 )
+				CreateTimer(0.1, TimerSetSkyCam);
+			else
+				TimerSetSkyCam(null);
 
 			#if DEBUG_LOGS
 			PrintToLog("LoadStorm End [%s]", sMap);
@@ -2812,7 +3130,7 @@ public void OnDirectorMob(const char[] output, int caller, int activator, float 
 
 public Action TimerTrigger(Handle timer, any data)
 {
-	if( g_bCvarAllow == false  )
+	if( g_bCvarAllow == false )
 	{
 		g_hTimerTrigger = null;
 		return Plugin_Stop;
@@ -3230,40 +3548,44 @@ void DisplayLightning(int client = 0)
 	EndMessage();
 
 
-	// PARTICLE TARGET
 	char sTemp[64];
-	int target = CreateEntityByName("info_particle_target");
-	DispatchKeyValue(target, "spawnflags", "0");
-	DispatchSpawn(target);
-	TeleportEntity(target, vAim, NULL_VECTOR, NULL_VECTOR);
+	int entity;
 
-	Format(sTemp, sizeof(sTemp), "storm%d%d%d", target, player, GetRandomInt(99,999));
-	DispatchKeyValue(target, "targetname", sTemp);
+	if( g_bLeft4Dead2 )
+	{
+		// PARTICLE TARGET
+		int target = CreateEntityByName("info_particle_target");
+		DispatchKeyValue(target, "spawnflags", "0");
+		DispatchSpawn(target);
+		TeleportEntity(target, vAim, NULL_VECTOR, NULL_VECTOR);
 
-	SetVariantString("OnUser1 !self:Kill::1.0:1");
-	AcceptEntityInput(target, "AddOutput");
-	AcceptEntityInput(target, "FireUser1");
+		Format(sTemp, sizeof(sTemp), "storm%d%d%d", target, player, GetRandomInt(99,999));
+		DispatchKeyValue(target, "targetname", sTemp);
 
+		SetVariantString("OnUser1 !self:Kill::1.0:1");
+		AcceptEntityInput(target, "AddOutput");
+		AcceptEntityInput(target, "FireUser1");
 
-	// PARTICLE SYSTEM
-	int entity = CreateEntityByName("info_particle_system");
-	DispatchKeyValue(entity, "cpoint1", sTemp);
-	if( GetRandomInt(0, 1) )
-		DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT1);
-	else
-		DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT2);
-	DispatchSpawn(entity);
-	ActivateEntity(entity);
-	TeleportEntity(entity, vPos, NULL_VECTOR, NULL_VECTOR);
-	AcceptEntityInput(entity, "Start");
+		// PARTICLE SYSTEM
+		entity = CreateEntityByName("info_particle_system");
+		DispatchKeyValue(entity, "cpoint1", sTemp);
+		if( GetRandomInt(0, 1) )
+			DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT1);
+		else
+			DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT2);
+		DispatchSpawn(entity);
+		ActivateEntity(entity);
+		TeleportEntity(entity, vPos, NULL_VECTOR, NULL_VECTOR);
+		AcceptEntityInput(entity, "Start");
 
-	SetVariantString("OnUser1 !self:Kill::1.0:1");
-	AcceptEntityInput(entity, "AddOutput");
-	AcceptEntityInput(entity, "FireUser1");
+		SetVariantString("OnUser1 !self:Kill::1.0:1");
+		AcceptEntityInput(entity, "AddOutput");
+		AcceptEntityInput(entity, "FireUser1");
+	}
 
 
 	// FLASH
-	if( g_iCfgLightFlash )
+	if( g_iCfgLightFlash && g_bLeft4Dead2 )
 	{
 		entity = CreateEntityByName("info_particle_system");
 		DispatchKeyValue(entity, "targetname", "silver_fx_screen_flash");
@@ -3636,6 +3958,8 @@ public void OnLogicIn(const char[] output, int entity, int activator, float dela
 // ====================================================================================================
 void CreateMixer()
 {
+	if( !g_bLeft4Dead2 ) return;
+
 	#if DEBUG_LOGS
 	PrintToLog("CreateMixer");
 	#endif
@@ -3752,6 +4076,8 @@ void ToggleEnvSun(int color)
 // ====================================================================================================
 void CreateClouds()
 {
+	if( !g_bLeft4Dead2 ) return;
+
 	int entity = FindEntityByClassname(-1, "sky_camera");
 
 	if( entity != -1 )
@@ -3812,7 +4138,10 @@ void CreateFog()
 			g_fFogStolen[count][1] = GetEntPropFloat(entity, Prop_Send, "m_fog.end");
 			g_fFogStolen[count][2] = GetEntPropFloat(entity, Prop_Send, "m_fog.maxdensity");
 			g_fFogStolen[count][3] = GetEntPropFloat(entity, Prop_Send, "m_fog.farz");
-			g_fFogStolen[count][4] = GetEntPropFloat(entity, Prop_Send, "m_fog.skyboxFogFactor");
+			if( g_bLeft4Dead2 )
+			{
+				g_fFogStolen[count][4] = GetEntPropFloat(entity, Prop_Send, "m_fog.skyboxFogFactor");
+			}
 			g_fFogStolen[count][5] = GetEntPropFloat(entity, Prop_Send, "m_fog.startLerpTo");
 			g_fFogStolen[count][6] = GetEntPropFloat(entity, Prop_Send, "m_fog.endLerpTo");
 			g_fFogStolen[count][7] = GetEntPropFloat(entity, Prop_Send, "m_fog.maxdensityLerpTo");
@@ -4036,6 +4365,8 @@ void CreateWind()
 	#if DEBUG_LOGS
 	PrintToLog("CreateWind");
 	#endif
+
+	if( g_iStarted == 0 ) return;
 
 	g_iWind = CreateEntityByName("env_wind");
 	if( g_iWind != -1 )
