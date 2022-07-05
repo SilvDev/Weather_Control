@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION		"1.14"
+#define PLUGIN_VERSION		"1.15"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,12 @@
 
 ========================================================================================
 	Change Log:
+
+1.15 (05-Jul-2022)
+	- Added feature: dynamic light glow effect for the fire created by a lightning strike.
+	- Added command "sm_lightningaim" to display a lightning strike where you're is aiming.
+
+	- Plugin is now compiled with SourceMod 1.11.
 
 1.14 (26-Mar-2022)
 	- Added cvar "l4d2_storm_time" to change the maps light style according to the server time.
@@ -322,6 +328,7 @@ public void OnPluginStart()
 	RegAdminCmd("sm_stormconfig",	CmdStormConfig,		ADMFLAG_ROOT,	"Display the currently loaded section from the data config.");
 	RegAdminCmd("sm_stormpreset",	CmdStormPreset,		ADMFLAG_ROOT,	"Displays a menu listing presets from the random section in the data config. Allowing you to select and change the current storm preset.");
 	RegAdminCmd("sm_lightning",		CmdLightning,		ADMFLAG_ROOT,	"Creates a Lightning Strike.");
+	RegAdminCmd("sm_lightningaim",	CmdLightningAim,	ADMFLAG_ROOT,	"Creates a Lightning Strike where you are aiming.");
 	RegAdminCmd("sm_background",	CmdBackground,		ADMFLAG_ROOT,	"Set the background color. Reset with no args. Set the color with three values between 0-255 separated by spaces: sm_background <r> <g> <b>.");
 	RegAdminCmd("sm_farz",			CmdFarZ,			ADMFLAG_ROOT,	"Set the maps far z-clip. This will make the map stop rendering stuff after the specified distance. Usage: sm_farz <distance>.");
 	RegAdminCmd("sm_maplight",		CmdMapLight,		ADMFLAG_ROOT,	"Set the maps lighting. Reset with no args. Usage: sm_maplight: <chars a-z, 1-64 chars allowed. More info: https://developer.valvesoftware.com/wiki/Light#Appearances");
@@ -855,7 +862,7 @@ public void OnClientPutInServer(int client)
 	}
 }
 
-public Action TimerPlaySound(Handle timer, any client)
+Action TimerPlaySound(Handle timer, any client)
 {
 	client = GetClientOfUserId(client);
 	if( client )
@@ -913,37 +920,37 @@ void UnhookEvents()
 	UnhookEvent("player_spawn",					Event_PlayerSpawn);
 }
 
-public void Event_PourGas(Event event, const char[] name, bool dontBroadcast)
+void Event_PourGas(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgPourGas && GetRandomInt(1, 100) <= g_iCfgPourGas )
 		StartStorm();
 }
 
-public void Event_Scavenge(Event event, const char[] name, bool dontBroadcast)
+void Event_Scavenge(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgScavenge && GetRandomInt(1, 100) <= g_iCfgScavenge )
 		StartStorm();
 }
 
-public void Event_FinaleIn(Event event, const char[] name, bool dontBroadcast)
+void Event_FinaleIn(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgFinale && GetRandomInt(1, 100) <= g_iCfgFinale )
 		StartStorm();
 }
 
-public void Event_PanicAlert(Event event, const char[] name, bool dontBroadcast)
+void Event_PanicAlert(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgPanic && GetRandomInt(1, 100) <= g_iCfgPanic )
 		StartStorm();
 }
 
-public void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
+void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgTank && GetRandomInt(1, 100) <= g_iCfgTank )
 		StartStorm();
 }
 
-public void Event_TankKilled(Event event, const char[] name, bool dontBroadcast)
+void Event_TankKilled(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgTankDeath && GetRandomInt(1, 100) <= g_iCfgTankDeath )
 	{
@@ -956,7 +963,7 @@ public void Event_TankKilled(Event event, const char[] name, bool dontBroadcast)
 	}
 }
 
-public void Event_WitchKilled(Event event, const char[] name, bool dontBroadcast)
+void Event_WitchKilled(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgWitch )
 		if( g_iCfgWitchHead == 0 || (g_iCfgWitchHead == 1 && event.GetBool("oneshot") == true) )
@@ -964,13 +971,13 @@ public void Event_WitchKilled(Event event, const char[] name, bool dontBroadcast
 				StartStorm();
 }
 
-public void Event_WitchAlert(Event event, const char[] name, bool dontBroadcast)
+void Event_WitchAlert(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgWitchAlert && GetRandomInt(1, 100) <= g_iCfgWitchAlert )
 		StartStorm();
 }
 
-public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
+void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
 	g_iReset = 1;
 	g_iRoundStart = 0;
@@ -978,7 +985,7 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 	g_iStarted = 1;
 }
 
-public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iStarted != 0 && g_iPlayerSpawn == 1 && g_iRoundStart == 0 )
 	{
@@ -993,7 +1000,7 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 		g_iStarted = 2;
 }
 
-public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
+void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iPlayerSpawn == 0 && g_iRoundStart == 1 )
 	{
@@ -1039,7 +1046,7 @@ bool IsStartOrEndMap()
 // ====================================================================================================
 //					MAP LIGHT STYLE
 // ====================================================================================================
-public Action TimerLightStyle(Handle timer, any userid)
+Action TimerLightStyle(Handle timer, any userid)
 {
 	int client = GetClientOfUserId(userid);
 	if( client != 0 && !IsFakeClient(client) )
@@ -1214,14 +1221,14 @@ void ChangeLightStyle(char[] lightstring, int client = 0)
 	}
 }
 
-public Action Hook_SetTransmitLight(int entity, int client)
+Action Hook_SetTransmitLight(int entity, int client)
 {
 	if( GetEntProp(entity, Prop_Data, "m_iHammerID") == client )
 		return Plugin_Continue;
 	return Plugin_Handled;
 }
 
-public void OnUser2(const char[] output, int entity, int activator, float delay)
+void OnUser2(const char[] output, int entity, int activator, float delay)
 {
 	int corner = GetEntProp(entity, Prop_Data, "m_iHealth");
 	SetEntProp(entity, Prop_Data, "m_iHealth", corner + 1);
@@ -1346,7 +1353,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		CreateTimer(0.0, TimerLight, EntIndexToEntRef(entity));
 }
 
-public Action TimerLight(Handle timer, any entity)
+Action TimerLight(Handle timer, any entity)
 {
 	if( EntRefToEntIndex(entity) != INVALID_ENT_REFERENCE && GetEntProp(entity, Prop_Send, "m_LightStyle") == 0 )
 	{
@@ -1366,12 +1373,12 @@ public void OnConfigsExecuted()
 	IsAllowed();
 }
 
-public void ConVarChanged_Allow(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_Allow(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	IsAllowed();
 }
 
-public void ConVarChanged_Cvars(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_Cvars(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	GetCvars();
 }
@@ -1466,7 +1473,7 @@ bool IsAllowedGameMode()
 	return true;
 }
 
-public void OnGamemode(const char[] output, int caller, int activator, float delay)
+void OnGamemode(const char[] output, int caller, int activator, float delay)
 {
 	if( strcmp(output, "OnCoop") == 0 )
 		g_iCurrentMode = 1;
@@ -1483,7 +1490,7 @@ public void OnGamemode(const char[] output, int caller, int activator, float del
 // ====================================================================================================
 //					SET SKYBOX
 // ====================================================================================================
-public void ConVarChanged_SkyBox(Handle convar, const char[] oldValue, const char[] newValue)
+void ConVarChanged_SkyBox(Handle convar, const char[] oldValue, const char[] newValue)
 {
 	SetSkyname();
 }
@@ -1662,7 +1669,7 @@ void CreateSkyCamera(int color1, int color2)
 // ====================================================================================================
 //					COMMANDS
 // ====================================================================================================
-public Action CmdStormMenu(int client, int args)
+Action CmdStormMenu(int client, int args)
 {
 	if( !client )
 	{
@@ -1674,32 +1681,32 @@ public Action CmdStormMenu(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdStormStart(int client, int args)
+Action CmdStormStart(int client, int args)
 {
 	StartStorm();
 	return Plugin_Handled;
 }
 
-public Action CmdStormStop(int client, int args)
+Action CmdStormStop(int client, int args)
 {
 	StopStorm();
 	return Plugin_Handled;
 }
 
-public Action CmdStormRefresh(int client, int args)
+Action CmdStormRefresh(int client, int args)
 {
 	ResetPlugin();
 	LoadStorm();
 	return Plugin_Handled;
 }
 
-public Action CmdStormReset(int client, int args)
+Action CmdStormReset(int client, int args)
 {
 	ResetPlugin();
 	return Plugin_Handled;
 }
 
-public Action CmdStormConfig(int client, int args)
+Action CmdStormConfig(int client, int args)
 {
 	if( client )
 		PrintToChat(client, "%s Config: {%s}.", CHAT_TAG, g_sConfigSection);
@@ -1708,7 +1715,7 @@ public Action CmdStormConfig(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdStormPreset(int client, int args)
+Action CmdStormPreset(int client, int args)
 {
 	if( !client )
 	{
@@ -1724,7 +1731,7 @@ public Action CmdStormPreset(int client, int args)
 	return Plugin_Handled;
 }
 
-public int PresetMenuHandler(Menu menu, MenuAction action, int client, int index)
+int PresetMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_Select )
 	{
@@ -1742,7 +1749,16 @@ public int PresetMenuHandler(Menu menu, MenuAction action, int client, int index
 	return 0;
 }
 
-public Action CmdLightning(int client, int args)
+Action CmdLightningAim(int client, int args)
+{
+	int stormstate = g_iStormState;
+	g_iStormState = STATE_OFF;
+	DisplayLightning(client, true);
+	g_iStormState = stormstate;
+	return Plugin_Handled;
+}
+
+Action CmdLightning(int client, int args)
 {
 	int stormstate = g_iStormState;
 	g_iStormState = STATE_OFF;
@@ -1751,7 +1767,7 @@ public Action CmdLightning(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdBackground(int client, int args)
+Action CmdBackground(int client, int args)
 {
 	if( args == 0 )
 	{
@@ -1805,7 +1821,7 @@ public Action CmdBackground(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdMapLight(int client, int args)
+Action CmdMapLight(int client, int args)
 {
 	if( g_sCfgLightStyle[0] == 0 )
 	{
@@ -1849,7 +1865,7 @@ public Action CmdMapLight(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdFarZ(int client, int args)
+Action CmdFarZ(int client, int args)
 {
 	if( args == 1)
 	{
@@ -1873,7 +1889,7 @@ public Action CmdFarZ(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdFog(int client, int args)
+Action CmdFog(int client, int args)
 {
 	if( g_iFogOn == 0 )
 	{
@@ -1910,7 +1926,7 @@ public Action CmdFog(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdRain(int client, int args)
+Action CmdRain(int client, int args)
 {
 	int count;
 	for( int i = 0; i < MAX_RAIN; i++ )
@@ -1961,7 +1977,7 @@ public Action CmdRain(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdSnow(int client, int args)
+Action CmdSnow(int client, int args)
 {
 	if( IsValidEntRef(g_iSnow) )
 	{
@@ -1994,7 +2010,7 @@ public Action CmdSnow(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdWind(int client, int args)
+Action CmdWind(int client, int args)
 {
 	if( IsValidEntRef(g_iWind) )
 	{
@@ -2018,7 +2034,7 @@ public Action CmdWind(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdSun(int client, int args)
+Action CmdSun(int client, int args)
 {
 	if( args == 0 )
 	{
@@ -2047,7 +2063,7 @@ public Action CmdSun(int client, int args)
 	return Plugin_Handled;
 }
 
-public Action CmdStormSet(int client, int args)
+Action CmdStormSet(int client, int args)
 {
 	if( args == 3 )
 	{
@@ -2110,7 +2126,7 @@ void ShowMenuMain(int client)
 	g_hMenuMain.Display(client, MENU_TIME_FOREVER);
 }
 
-public int MainMenuHandler(Menu menu, MenuAction action, int client, int index)
+int MainMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_Select )
 	{
@@ -2174,7 +2190,7 @@ void ShowMenuTrigger(int client)
 	hMenu.Display(client, MENU_TIME_FOREVER);
 }
 
-public int TrigMenuHandler(Menu menu, MenuAction action, int client, int index)
+int TrigMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_End )
 	{
@@ -2248,7 +2264,7 @@ void ShowMenuTrigList(int client, int index)
 	hMenu.Display(client, MENU_TIME_FOREVER);
 }
 
-public int TriggerMenuHandler(Menu menu, MenuAction action, int client, int index)
+int TriggerMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_End )
 	{
@@ -2318,7 +2334,7 @@ public int TriggerMenuHandler(Menu menu, MenuAction action, int client, int inde
 	return 0;
 }
 
-public int VMaxsMenuHandler(Menu menu, MenuAction action, int client, int index)
+int VMaxsMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_Cancel )
 	{
@@ -2344,7 +2360,7 @@ public int VMaxsMenuHandler(Menu menu, MenuAction action, int client, int index)
 	return 0;
 }
 
-public int VMinsMenuHandler(Menu menu, MenuAction action, int client, int index)
+int VMinsMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_Cancel )
 	{
@@ -2370,7 +2386,7 @@ public int VMinsMenuHandler(Menu menu, MenuAction action, int client, int index)
 	return 0;
 }
 
-public int PosMenuHandler(Menu menu, MenuAction action, int client, int index)
+int PosMenuHandler(Menu menu, MenuAction action, int client, int index)
 {
 	if( action == MenuAction_Cancel )
 	{
@@ -2580,7 +2596,7 @@ void CreateTriggerMultiple(float vPos[3], float vMaxs[3], float vMins[3])
 	g_iTriggers[g_iTriggerCount] = EntIndexToEntRef(trigger);
 }
 
-public void OnStartTouch(const char[] output, int caller, int activator, float delay)
+void OnStartTouch(const char[] output, int caller, int activator, float delay)
 {
 	if( IsClientInGame(activator) && GetClientTeam(activator) == 2 )
 	{
@@ -2589,7 +2605,7 @@ public void OnStartTouch(const char[] output, int caller, int activator, float d
 	}
 }
 
-public Action TimerBeam(Handle timer)
+Action TimerBeam(Handle timer)
 {
 	if( IsValidEntRef(g_iTriggerSelected) )
 	{
@@ -3112,14 +3128,14 @@ void LoadStorm(int client = 0)
 	}
 }
 
-public Action TimerSetSkyCam(Handle timer)
+Action TimerSetSkyCam(Handle timer)
 {
 	SetBackground(false);
 	ChangeLightStyle(g_sCfgLightStyle);
 	return Plugin_Continue;
 }
 
-public void OnDirectorMob(const char[] output, int caller, int activator, float delay)
+void OnDirectorMob(const char[] output, int caller, int activator, float delay)
 {
 	if( g_iStormState == STATE_OFF )
 		return;
@@ -3128,7 +3144,7 @@ public void OnDirectorMob(const char[] output, int caller, int activator, float 
 		StartStorm();
 }
 
-public Action TimerTrigger(Handle timer, any data)
+Action TimerTrigger(Handle timer, any data)
 {
 	if( g_bCvarAllow == false )
 	{
@@ -3194,7 +3210,7 @@ void StartStorm(int client = 0)
 	}
 }
 
-public Action TimerEndStorm(Handle timer)
+Action TimerEndStorm(Handle timer)
 {
 	#if DEBUG_LOGS
 	PrintToLog("TimerEndStorm");
@@ -3255,7 +3271,7 @@ void StopStorm(int client = 0)
 	#endif
 }
 
-public Action TimerTimeout(Handle timer)
+Action TimerTimeout(Handle timer)
 {
 	g_hTimerTimeout = null;
 	return Plugin_Continue;
@@ -3422,12 +3438,12 @@ void CreateLightning()
 	#endif
 }
 
-public void OutputOnLightning(const char[] output, int caller, int activator, float delay)
+void OutputOnLightning(const char[] output, int caller, int activator, float delay)
 {
 	DisplayLightning();
 }
 
-void DisplayLightning(int client = 0)
+void DisplayLightning(int client = 0, bool aim = false)
 {
 	#if DEBUG_LOGS
 	PrintToLog("DisplayLightning [%d]", client);
@@ -3495,47 +3511,64 @@ void DisplayLightning(int client = 0)
 		}
 	}
 
-
-	// GET RANDOM CLIENT
+	// Aim pos lightning
 	float vPos[3], vAim[3];
-	int player, clients[MAXPLAYERS+1], count;
 
-	for( int i = 1; i <= MaxClients; i++ )
+	if( aim )
 	{
-		if( IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i) )
+		aim = false;
+		if( SetTeleportEndPoint(client, vAim, vPos) )
 		{
-			clients[count++] = i;
+			vPos = vAim;
+			vPos[2] += 1000.0;
+			aim = true;
 		}
 	}
 
-
-	// RANDOM CLIENT SELECTED
-	if( count )
+	// GET RANDOM CLIENT
+	int player;
+	if( !aim )
 	{
-		player = clients[GetRandomInt(0, count-1)];
+		int clients[MAXPLAYERS+1], count;
 
-		float vMaxs[3];
-		GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
-		GetClientAbsOrigin(player, vPos);
+		for( int i = 1; i <= MaxClients; i++ )
+		{
+			if( IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i) )
+			{
+				clients[count++] = i;
+				player = client;
+			}
+		}
 
-		vPos[0] += GetRandomInt(-1200, 1200);
-		vPos[1] += GetRandomInt(-1200, 1200);
-		vPos[2] = vMaxs[2];
+
+		// RANDOM CLIENT SELECTED
+		if( count )
+		{
+			player = clients[GetRandomInt(0, count-1)];
+
+			float vMaxs[3];
+			GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
+			GetClientAbsOrigin(player, vPos);
+
+			vPos[0] += GetRandomInt(-1200, 1200);
+			vPos[1] += GetRandomInt(-1200, 1200);
+			vPos[2] = vMaxs[2];
+		}
+		else // RANDOM PLACE ON MAP
+		{
+			float vMins[3], vMaxs[3];
+			GetEntPropVector(0, Prop_Data, "m_WorldMins", vMins);
+			GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
+
+			vPos[0] = GetRandomFloat(vMins[0], vMaxs[0]);
+			vPos[1] = GetRandomFloat(vMins[1], vMaxs[1]);
+			vPos[2] = vMaxs[2];
+		}
+
+
+		// TRACE FROM SKYBOX TO GROUND
+		client = TraceDown(vPos, vAim);
 	}
-	else // RANDOM PLACE ON MAP
-	{
-		float vMins[3], vMaxs[3];
-		GetEntPropVector(0, Prop_Data, "m_WorldMins", vMins);
-		GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
-
-		vPos[0] = GetRandomFloat(vMins[0], vMaxs[0]);
-		vPos[1] = GetRandomFloat(vMins[1], vMaxs[1]);
-		vPos[2] = vMaxs[2];
-	}
-
-
-	// TRACE FROM SKYBOX TO GROUND
-	client = TraceDown(vPos, vAim);
 
 
 	// SHAKE
@@ -3600,7 +3633,7 @@ void DisplayLightning(int client = 0)
 	}
 
 	// LIGHTNING HURT
-	if( g_iCfgLightDmg && client == 0 )
+	if( g_iCfgLightDmg && (client == 0 || aim) )
 	{
 		// FIRE PARTICLES
 		vAim[2] += 10.0;
@@ -3633,11 +3666,72 @@ void DisplayLightning(int client = 0)
 		SetVariantString(sTemp);
 		AcceptEntityInput(trigger, "AddOutput");
 		AcceptEntityInput(trigger, "FireUser1");
+
+		// LIGHT EFFECT
+		entity = CreateEntityByName("light_dynamic");
+		if( entity != -1)
+		{
+			DispatchKeyValue(entity, "_light", "255 50 0 255");
+			DispatchKeyValue(entity, "brightness", "5");
+			DispatchKeyValueFloat(entity, "spotlight_radius", 32.0);
+			DispatchKeyValueFloat(entity, "distance", 80.0);
+			DispatchKeyValue(entity, "style", "6");
+			DispatchSpawn(entity);
+
+			vAim[2] += 10.0;
+			TeleportEntity(entity, vAim, NULL_VECTOR, NULL_VECTOR);
+			AcceptEntityInput(entity, "TurnOn");
+
+			SetVariantString(sTemp);
+			AcceptEntityInput(entity, "AddOutput");
+			AcceptEntityInput(entity, "FireUser1");
+		}
 	}
 
 	#if DEBUG_LOGS
 	PrintToLog("DisplayLightning End [%d]", client);
 	#endif
+}
+
+bool SetTeleportEndPoint(int client, float vPos[3], float vAng[3])
+{
+	GetClientEyePosition(client, vPos);
+	GetClientEyeAngles(client, vAng);
+
+	Handle trace = TR_TraceRayFilterEx(vPos, vAng, MASK_SHOT, RayType_Infinite, _TraceFilter);
+
+	if( TR_DidHit(trace) )
+	{
+		float vNorm[3];
+		TR_GetEndPosition(vPos, trace);
+		TR_GetPlaneNormal(trace, vNorm);
+		float angle = vAng[1];
+		GetVectorAngles(vNorm, vAng);
+
+		if( vNorm[2] == 1.0 )
+		{
+			vAng[0] = 0.0;
+			vAng[1] += angle;
+		}
+		else
+		{
+			vAng[0] = 0.0;
+			vAng[1] += angle - 90.0;
+		}
+	}
+	else
+	{
+		delete trace;
+		return false;
+	}
+
+	delete trace;
+	return true;
+}
+
+bool _TraceFilter(int entity, int contentsMask)
+{
+	return entity > MaxClients || !entity;
 }
 
 int TraceDown(float vPos[3], float vAim[3])
@@ -3901,7 +3995,7 @@ void CreateLogics()
 		LogError("Failed to create g_iLogicOut 'logic_relay'");
 }
 
-public void OnLogicOut(const char[] output, int entity, int activator, float delay)
+void OnLogicOut(const char[] output, int entity, int activator, float delay)
 {
 	#if DEBUG_LOGS
 	PrintToLog("OnLogicOut");
@@ -3926,7 +4020,7 @@ public void OnLogicOut(const char[] output, int entity, int activator, float del
 	#endif
 }
 
-public void OnLogicIn(const char[] output, int entity, int activator, float delay)
+void OnLogicIn(const char[] output, int entity, int activator, float delay)
 {
 	#if DEBUG_LOGS
 	PrintToLog("OnLogicIn");
@@ -4333,6 +4427,7 @@ void CreateSnow()
 			{
 				found = true;
 				GetClientAbsOrigin(i, vBuff);
+				break;
 			}
 		}
 
