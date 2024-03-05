@@ -1,6 +1,6 @@
 /*
 *	Weather Control
-*	Copyright (C) 2022 Silvers
+*	Copyright (C) 2024 Silvers
 *
 *	This program is free software: you can redistribute it and/or modify
 *	it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION		"1.15"
+#define PLUGIN_VERSION		"1.16"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,9 @@
 
 ========================================================================================
 	Change Log:
+
+1.16 (05-Mar-2024)
+	- Fixed invalid entity error. Thanks to "HarryPotter" for reporting.
 
 1.15 (05-Jul-2022)
 	- Added feature: dynamic light glow effect for the fire created by a lightning strike.
@@ -522,10 +525,9 @@ void DownloadSkyboxes()
 	}
 }
 
-stock bool IsDefaultSkybox(char[] sSky)
+bool IsDefaultSkybox(char[] sSky)
 {
-	int v;
-	return g_smMapSky.GetValue(sSky, v);
+	return g_smMapSky.ContainsKey(sSky);
 }
 
 void GetSkyBoxes()
@@ -862,7 +864,7 @@ public void OnClientPutInServer(int client)
 	}
 }
 
-Action TimerPlaySound(Handle timer, any client)
+Action TimerPlaySound(Handle timer, int client)
 {
 	client = GetClientOfUserId(client);
 	if( client )
@@ -956,7 +958,7 @@ void Event_TankKilled(Event event, const char[] name, bool dontBroadcast)
 	{
 		int client = GetClientOfUserId(event.GetInt("userid"));
 
-		if( client >= 1 && client <= MaxClients && GetEntProp(client, Prop_Send, "m_zombieClass") == 8 )
+		if( client >= 1 && client <= MaxClients && IsClientInGame(client) && GetEntProp(client, Prop_Send, "m_zombieClass") == 8 )
 		{
 			StartStorm();
 		}
@@ -1046,7 +1048,7 @@ bool IsStartOrEndMap()
 // ====================================================================================================
 //					MAP LIGHT STYLE
 // ====================================================================================================
-Action TimerLightStyle(Handle timer, any userid)
+Action TimerLightStyle(Handle timer, int userid)
 {
 	int client = GetClientOfUserId(userid);
 	if( client != 0 && !IsFakeClient(client) )
@@ -1353,7 +1355,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		CreateTimer(0.0, TimerLight, EntIndexToEntRef(entity));
 }
 
-Action TimerLight(Handle timer, any entity)
+Action TimerLight(Handle timer, int entity)
 {
 	if( EntRefToEntIndex(entity) != INVALID_ENT_REFERENCE && GetEntProp(entity, Prop_Send, "m_LightStyle") == 0 )
 	{
@@ -3144,7 +3146,7 @@ void OnDirectorMob(const char[] output, int caller, int activator, float delay)
 		StartStorm();
 }
 
-Action TimerTrigger(Handle timer, any data)
+Action TimerTrigger(Handle timer)
 {
 	if( g_bCvarAllow == false )
 	{
