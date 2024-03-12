@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION		"1.16"
+#define PLUGIN_VERSION		"1.17"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,10 @@
 
 ========================================================================================
 	Change Log:
+
+1.17 (12-Mar-2024)
+	- Added configuration for the "sun_overlaysize" and "sun_size", for idle and storm weather. Thanks to "glhf3000" for writing the code.
+	- Added data config keys: "sun_overlaysize", "sun_size" and "sun_overlaysize_storm", "sun_size_storm" to set the sun size.
 
 1.16 (05-Mar-2024)
 	- Fixed invalid entity error. Thanks to "HarryPotter" for reporting.
@@ -242,7 +246,9 @@ int g_iCfgBackground, g_iCfgClouds, g_iCfgLight, g_iCfgLightDmg, g_iCfgLightFlas
 char g_sCfgLightStyle[64], g_sSkyBox[64];
 
 // Storm state triggers
-int g_iCfgFinale, g_iCfgForever, g_iCfgHorde, g_iCfgPanic, g_iCfgScavenge, g_iCfgPourGas, g_iCfgTank, g_iCfgTankDeath, g_iCfgTimeMax, g_iCfgTimeMin, g_iCfgTimeout, g_iCfgTimer, g_iCfgWitch, g_iCfgWitchAlert, g_iCfgWitchHead, g_iFogVolume, g_iLight, g_iLogicDirector, g_iLogicIn, g_iLogicOut, g_iPostProcess, g_iRains[MAX_RAIN], g_iSkyCam[2], g_iSkyCamera, g_iSnow, g_iSoundRain, g_iSoundWind, g_iStormLayer, g_iVoip, g_iVoipIn, g_iVoipOut, g_iWind;
+int g_iCfgSunSizeStorm, g_iCfgSunOverlaysizeStorm, g_iCfgSunSize, g_iCfgSunOverlaysize, g_iCfgFinale, g_iCfgForever, g_iCfgHorde, g_iCfgPanic, g_iCfgScavenge, g_iCfgPourGas, g_iCfgTank, g_iCfgTankDeath, g_iCfgTimeMax, g_iCfgTimeMin, g_iCfgTimeout, g_iCfgTimer, g_iCfgWitch, g_iCfgWitchAlert, g_iCfgWitchHead, g_iFogVolume, g_iLight, g_iLogicDirector, g_iLogicIn, g_iLogicOut, g_iPostProcess, g_iRains[MAX_RAIN], g_iSkyCam[2], g_iSkyCamera, g_iSnow, g_iSoundRain, g_iSoundWind, g_iStormLayer, g_iVoip, g_iVoipIn, g_iVoipOut, g_iWind;
+
+int g_iCfgSunSizeDefault, g_iCfgSunOverlaysizeDefault;
 
 char g_sConfigSection[64];
 
@@ -415,6 +421,8 @@ public void OnPluginEnd()
 
 public void OnMapStart()
 {
+	SaveDefaultEnvSunSize();
+
 	g_bMapStarted = true;
 
 	if( g_iLateLoad )
@@ -436,6 +444,8 @@ public void OnMapStart()
 
 	if( g_iCvarRand || (g_iCvarRand == 0 && IsStartOrEndMap() && !IsFinalMap()) )
 		g_iRandom = 0;
+
+	// PrintToServer("g_iCvarRand/g_iRandom: %i/%i", g_iCvarRand, g_iRandom);
 
 	g_iLaserMaterial = PrecacheModel("materials/sprites/laserbeam.vmt");
 	g_iHaloMaterial = PrecacheModel("materials/sprites/halo01.vmt");
@@ -766,6 +776,12 @@ void ResetVars()
 	g_iCfgWitch = 0;
 	g_iCfgWitchHead = 0;
 	g_iCfgWitchAlert = 0;
+	g_iCfgSunOverlaysize = 0;
+	g_iCfgSunOverlaysizeStorm = 0;
+	g_iCfgSunSize = 0;
+	g_iCfgSunSizeStorm = 0;
+	g_iCfgSunSizeDefault = 0;
+	g_iCfgSunOverlaysizeDefault = 0;
 }
 
 void ResetFog()
@@ -864,7 +880,7 @@ public void OnClientPutInServer(int client)
 	}
 }
 
-Action TimerPlaySound(Handle timer, int client)
+Action TimerPlaySound(Handle timer, any client)
 {
 	client = GetClientOfUserId(client);
 	if( client )
@@ -924,37 +940,37 @@ void UnhookEvents()
 
 void Event_PourGas(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgPourGas && GetRandomInt(1, 100) <= g_iCfgPourGas )
+	if( g_iCfgForever == 0 && g_iCfgPourGas && Math_GetRandomInt(1, 100) <= g_iCfgPourGas )
 		StartStorm();
 }
 
 void Event_Scavenge(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgScavenge && GetRandomInt(1, 100) <= g_iCfgScavenge )
+	if( g_iCfgForever == 0 && g_iCfgScavenge && Math_GetRandomInt(1, 100) <= g_iCfgScavenge )
 		StartStorm();
 }
 
 void Event_FinaleIn(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgFinale && GetRandomInt(1, 100) <= g_iCfgFinale )
+	if( g_iCfgForever == 0 && g_iCfgFinale && Math_GetRandomInt(1, 100) <= g_iCfgFinale )
 		StartStorm();
 }
 
 void Event_PanicAlert(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgPanic && GetRandomInt(1, 100) <= g_iCfgPanic )
+	if( g_iCfgForever == 0 && g_iCfgPanic && Math_GetRandomInt(1, 100) <= g_iCfgPanic )
 		StartStorm();
 }
 
 void Event_TankSpawn(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgTank && GetRandomInt(1, 100) <= g_iCfgTank )
+	if( g_iCfgForever == 0 && g_iCfgTank && Math_GetRandomInt(1, 100) <= g_iCfgTank )
 		StartStorm();
 }
 
 void Event_TankKilled(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgTankDeath && GetRandomInt(1, 100) <= g_iCfgTankDeath )
+	if( g_iCfgForever == 0 && g_iCfgTankDeath && Math_GetRandomInt(1, 100) <= g_iCfgTankDeath )
 	{
 		int client = GetClientOfUserId(event.GetInt("userid"));
 
@@ -969,13 +985,13 @@ void Event_WitchKilled(Event event, const char[] name, bool dontBroadcast)
 {
 	if( g_iCfgForever == 0 && g_iCfgWitch )
 		if( g_iCfgWitchHead == 0 || (g_iCfgWitchHead == 1 && event.GetBool("oneshot") == true) )
-			if( GetRandomInt(1, 100) <= g_iCfgWitch )
+			if( Math_GetRandomInt(1, 100) <= g_iCfgWitch )
 				StartStorm();
 }
 
 void Event_WitchAlert(Event event, const char[] name, bool dontBroadcast)
 {
-	if( g_iCfgForever == 0 && g_iCfgWitchAlert && GetRandomInt(1, 100) <= g_iCfgWitchAlert )
+	if( g_iCfgForever == 0 && g_iCfgWitchAlert && Math_GetRandomInt(1, 100) <= g_iCfgWitchAlert )
 		StartStorm();
 }
 
@@ -1048,7 +1064,7 @@ bool IsStartOrEndMap()
 // ====================================================================================================
 //					MAP LIGHT STYLE
 // ====================================================================================================
-Action TimerLightStyle(Handle timer, int userid)
+Action TimerLightStyle(Handle timer, any userid)
 {
 	int client = GetClientOfUserId(userid);
 	if( client != 0 && !IsFakeClient(client) )
@@ -1355,7 +1371,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 		CreateTimer(0.0, TimerLight, EntIndexToEntRef(entity));
 }
 
-Action TimerLight(Handle timer, int entity)
+Action TimerLight(Handle timer, any entity)
 {
 	if( EntRefToEntIndex(entity) != INVALID_ENT_REFERENCE && GetEntProp(entity, Prop_Send, "m_LightStyle") == 0 )
 	{
@@ -2713,6 +2729,15 @@ void ConfigSave(KeyValues hFile)
 	hFile.ExportToFile(sPath);
 }
 
+int Math_GetRandomInt(int min, int max)
+{
+	int random = GetURandomInt();
+
+	if( random == 0 ) random++;
+
+	return RoundToCeil(float(random) / (float(2147483647) / float(max - min + 1))) + min - 1;
+}
+
 // ====================================================================================================
 //					CONFIG JUMP : map, main, use_section, random.
 // ====================================================================================================
@@ -2727,6 +2752,8 @@ int ConfigJumpA(KeyValues hFile, char sMap[64])
 
 		#if DEBUG_LOGS
 		PrintToLog("ConfigJumpA [%s]", sMap);
+		PrintToServer("g_iRandom: %i", g_iRandom);
+		PrintToServer("sJump[0]: %s", sJump[0]);
 		#endif
 
 		if( sJump[0] )
@@ -2744,7 +2771,7 @@ int ConfigJumpA(KeyValues hFile, char sMap[64])
 				if( count != 0 )
 				{
 					if( g_iRandom == 0 ) // Pick global random, use this index to load data.
-						g_iRandom = GetRandomInt(1, count);
+						g_iRandom = Math_GetRandomInt(1, count);
 					else if( g_iRandom > count )
 						g_iRandom = count;
 
@@ -2807,7 +2834,7 @@ bool ConfigJumpB(KeyValues hFile, char sMap[64])
 bool ConfigChance(int client, KeyValues hFile)
 {
 	if( g_iChance == 0 )
-		g_iChance = GetRandomInt(1, 100);
+		g_iChance = Math_GetRandomInt(1, 100);
 
 	if( client == 0 )
 	{
@@ -2890,9 +2917,10 @@ void LoadStorm(int client = 0)
 
 		if( completed_jump || g_iPresetLoad == 1 )
 		{
-
 			#if DEBUG_LOGS
 			PrintToLog("LoadStorm [%s]", sMap);
+			PrintToLog("LoadStorm [%s] completed_jump: %i", sMap, completed_jump);
+			PrintToLog("LoadStorm [%s] g_iPresetLoad/ConfigChance: %i/%i", sMap, g_iPresetLoad, ConfigChance(client, hFile));
 			#endif
 
 			if( g_iPresetLoad == 0 && ConfigChance(client, hFile) == false )
@@ -2947,6 +2975,11 @@ void LoadStorm(int client = 0)
 			char sColors[12];
 			hFile.GetString("sun", sColors, sizeof(sColors));
 
+			g_iCfgSunOverlaysize =			hFile.GetNum("sun_overlaysize",					g_iCfgSunOverlaysize);
+			g_iCfgSunOverlaysizeStorm =		hFile.GetNum("sun_overlaysize_storm",			g_iCfgSunOverlaysizeStorm);
+			g_iCfgSunSize =					hFile.GetNum("sun_size",						g_iCfgSunSize);
+			g_iCfgSunSizeStorm =			hFile.GetNum("sun_size_storm",					g_iCfgSunSizeStorm);
+
 			if( completed_jump == 1 && ConfigJumpB(hFile, sMap) )
 			{
 				if( ConfigChance(client, hFile) == false )
@@ -2998,6 +3031,11 @@ void LoadStorm(int client = 0)
 				g_iCfgWitchHead =		hFile.GetNum("trigger_witch_head",					g_iCfgWitchHead);
 				g_iCfgWitchAlert =		hFile.GetNum("trigger_witch_alert",					g_iCfgWitchAlert);
 				hFile.GetString("sun", sColors, sizeof(sColors), sColors);
+
+				g_iCfgSunOverlaysize =			hFile.GetNum("sun_overlaysize",					g_iCfgSunOverlaysize);
+				g_iCfgSunOverlaysizeStorm =		hFile.GetNum("sun_overlaysize_storm",			g_iCfgSunOverlaysizeStorm);
+				g_iCfgSunSize =					hFile.GetNum("sun_size",						g_iCfgSunSize);
+				g_iCfgSunSizeStorm =			hFile.GetNum("sun_size_storm",					g_iCfgSunSizeStorm);
 			}
 
 			g_iCfgRain = Clamp(g_iCfgRain, MAX_RAIN);
@@ -3108,6 +3146,7 @@ void LoadStorm(int client = 0)
 				StopAmbientSound();
 				PlaySoundRain();
 				PlaySoundWind();
+				SetSunSize();
 			}
 
 			if( g_iCfgForever == 1 )
@@ -3142,11 +3181,11 @@ void OnDirectorMob(const char[] output, int caller, int activator, float delay)
 	if( g_iStormState == STATE_OFF )
 		return;
 
-	if( GetRandomInt(1, 100) <= g_iCfgHorde )
+	if( Math_GetRandomInt(1, 100) <= g_iCfgHorde )
 		StartStorm();
 }
 
-Action TimerTrigger(Handle timer)
+Action TimerTrigger(Handle timer, any data)
 {
 	if( g_bCvarAllow == false )
 	{
@@ -3185,7 +3224,7 @@ void StartStorm(int client = 0)
 		{
 			if( g_iCfgTimeMin != 0 && g_iCfgTimeMax != 0 )
 			{
-				int time = GetRandomInt(g_iCfgTimeMin, g_iCfgTimeMax);
+				int time = Math_GetRandomInt(g_iCfgTimeMin, g_iCfgTimeMax);
 				g_hTimerEndStorm = CreateTimer(float(time), TimerEndStorm);
 			}
 		}
@@ -3194,6 +3233,7 @@ void StartStorm(int client = 0)
 		StopAmbientSound();
 		PlaySoundRain();
 		PlaySoundWind();
+		SetSunSize();
 
 		// POST PROCESS
 		if( (g_fCfgPostStorm != 0.0 && g_fCfgPostStorm != -999.0) || g_fCvarPost != 0.0 )
@@ -3251,6 +3291,7 @@ void StopStorm(int client = 0)
 		StopAmbientSound();
 		PlaySoundRain();
 		PlaySoundWind();
+		SetSunSize();
 
 		// POST PROCESS
 		if( IsValidEntRef(g_iFogVolume) )
@@ -3454,13 +3495,13 @@ void DisplayLightning(int client = 0, bool aim = false)
 	// SOUND
 	int rand;
 	if( client )
-		rand = GetRandomInt(0, 3);
+		rand = Math_GetRandomInt(0, 3);
 	else
-		rand = GetRandomInt(0, 1);
+		rand = Math_GetRandomInt(0, 1);
 
 	if( rand == 0 )
 	{
-		rand = GetRandomInt(1, 16);
+		rand = Math_GetRandomInt(1, 16);
 
 		switch( rand )
 		{
@@ -3546,14 +3587,14 @@ void DisplayLightning(int client = 0, bool aim = false)
 		// RANDOM CLIENT SELECTED
 		if( count )
 		{
-			player = clients[GetRandomInt(0, count-1)];
+			player = clients[Math_GetRandomInt(0, count-1)];
 
 			float vMaxs[3];
 			GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
 			GetClientAbsOrigin(player, vPos);
 
-			vPos[0] += GetRandomInt(-1200, 1200);
-			vPos[1] += GetRandomInt(-1200, 1200);
+			vPos[0] += Math_GetRandomInt(-1200, 1200);
+			vPos[1] += Math_GetRandomInt(-1200, 1200);
 			vPos[2] = vMaxs[2];
 		}
 		else // RANDOM PLACE ON MAP
@@ -3594,7 +3635,7 @@ void DisplayLightning(int client = 0, bool aim = false)
 		DispatchSpawn(target);
 		TeleportEntity(target, vAim, NULL_VECTOR, NULL_VECTOR);
 
-		Format(sTemp, sizeof(sTemp), "storm%d%d%d", target, player, GetRandomInt(99,999));
+		Format(sTemp, sizeof(sTemp), "storm%d%d%d", target, player, Math_GetRandomInt(99,999));
 		DispatchKeyValue(target, "targetname", sTemp);
 
 		SetVariantString("OnUser1 !self:Kill::1.0:1");
@@ -3604,7 +3645,7 @@ void DisplayLightning(int client = 0, bool aim = false)
 		// PARTICLE SYSTEM
 		entity = CreateEntityByName("info_particle_system");
 		DispatchKeyValue(entity, "cpoint1", sTemp);
-		if( GetRandomInt(0, 1) )
+		if( Math_GetRandomInt(0, 1) )
 			DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT1);
 		else
 			DispatchKeyValue(entity, "effect_name", PARTICLE_LIGHT2);
@@ -4143,6 +4184,21 @@ void CreateMixer()
 // ====================================================================================================
 //					env_sun
 // ====================================================================================================
+void SaveDefaultEnvSunSize()
+{
+	int env_sun = -1;
+	while( (env_sun = FindEntityByClassname(env_sun, "env_sun")) != INVALID_ENT_REFERENCE )
+	{
+		g_iCfgSunSizeDefault = GetEntProp(env_sun, Prop_Data, "m_nSize");
+		g_iCfgSunOverlaysizeDefault = GetEntProp(env_sun, Prop_Data, "m_nOverlaySize");
+
+		return;
+	}
+
+	g_iCfgSunSizeDefault = 0;
+	g_iCfgSunOverlaysizeDefault = 0;
+}
+
 void ToggleEnvSun(int color)
 {
 	int env_sun = -1;
@@ -4160,6 +4216,9 @@ void ToggleEnvSun(int color)
 		else
 		{
 			SetEntProp(env_sun, Prop_Send, "m_clrRender", color);
+
+			SetSunSize(env_sun);
+
 			AcceptEntityInput(env_sun, "TurnOn");
 		}
 	}
@@ -4617,8 +4676,8 @@ void PlaySoundRain()
 	if( g_iCfgRain )
 	{
 		int random;
-		if( g_iStormState <= STATE_IDLE )	random = GetRandomInt(1, 4);
-		else								random = GetRandomInt(5, 10);
+		if( g_iStormState <= STATE_IDLE )	random = Math_GetRandomInt(1, 4);
+		else								random = Math_GetRandomInt(5, 10);
 
 		switch( random )
 		{
@@ -4640,8 +4699,8 @@ void PlaySoundWind()
 {
 	if( g_iCfgWind )
 	{
-		if( g_iStormState <= STATE_IDLE )	g_iCfgWind = GetRandomInt(1, 4);
-		else								g_iCfgWind = GetRandomInt(5, 8);
+		if( g_iStormState <= STATE_IDLE )	g_iCfgWind = Math_GetRandomInt(1, 4);
+		else								g_iCfgWind = Math_GetRandomInt(5, 8);
 
 		switch(g_iCfgWind)
 		{
@@ -4655,6 +4714,53 @@ void PlaySoundWind()
 			case 8:		PlayAmbientSound(1, SOUND_WIND8);
 		}
 	}
+}
+
+void SetSunSize(int env_sun = -1)
+{
+	int overlaySize, size;
+
+	if( env_sun == -1 )
+	{
+		while( (env_sun = FindEntityByClassname(env_sun, "env_sun")) != INVALID_ENT_REFERENCE )
+		{
+			break;
+		}
+	}
+
+	if( env_sun == -1 ) return;
+
+	if( g_iStormState <= STATE_IDLE )
+	{
+		// OVERLAY SIZE
+		if( g_iCfgSunOverlaysize > 0 )
+			overlaySize = g_iCfgSunOverlaysize;
+		else
+			overlaySize = g_iCfgSunOverlaysizeDefault;
+
+		// SIZE
+		if( g_iCfgSunSize > 0 )
+			size = g_iCfgSunSize;
+		else
+			size = g_iCfgSunSizeDefault;
+	}
+	else
+	{
+		// OVERLAY SIZE
+		if( g_iCfgSunOverlaysizeStorm > 0 )
+			overlaySize = g_iCfgSunOverlaysizeStorm;
+		else
+			overlaySize = g_iCfgSunOverlaysizeDefault;
+
+		// SIZE
+		if( g_iCfgSunSizeStorm > 0 )
+			size = g_iCfgSunSizeStorm;
+		else
+			size = g_iCfgSunSizeDefault;
+	}
+
+	SetEntProp(env_sun, Prop_Send, "m_nOverlaySize", overlaySize);
+	SetEntProp(env_sun, Prop_Send, "m_nSize", size);
 }
 
 
