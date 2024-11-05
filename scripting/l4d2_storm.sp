@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION		"1.17"
+#define PLUGIN_VERSION		"1.18"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,9 @@
 
 ========================================================================================
 	Change Log:
+
+1.18 (05-Nov-2024)
+	- Changes to fix the skybox not always loading correctly. Thanks to "Tighty-Whitey" for reporting and testing.
 
 1.17 (12-Mar-2024)
 	- Added configuration for the "sun_overlaysize" and "sun_size", for idle and storm weather. Thanks to "glhf3000" for writing the code.
@@ -227,7 +230,7 @@ enum
 Handle g_hTimerEndStorm, g_hTimerTimeout, g_hTimerTrigger;
 ConVar g_hCvarAllow, g_hCvarMPGameMode, g_hCvarMixer, g_hCvarModes, g_hCvarModesOff, g_hCvarModesTog, g_hCvarPost, g_hCvarRand, g_hCvarSkyName, g_hCvarStyle, g_hCvarTime, g_hCvarTimeOfDay;
 int g_iChance, g_iCvarMixer, g_iCvarRand, g_iCvarStyle, g_iCvarTime, g_iLateLoad, g_iPlayerSpawn, g_iRandom, g_iReset, g_iRoundStart, g_iStarted, g_iStormState;
-bool g_bCvarAllow, g_bMapStarted, g_bLoaded;
+bool g_bCvarAllow, g_bMapStarted, g_bLoaded, g_bRandom;
 float g_fCvarPost, g_fCfgPostIdle, g_fCfgPostStorm;
 
 // Menu // Trigger boxes // Light Style // Preset Selection
@@ -421,6 +424,13 @@ public void OnPluginEnd()
 
 public void OnMapStart()
 {
+	#if DEBUG_LOGS
+	char sMap[64];
+	GetCurrentMap(sMap, sizeof(sMap));
+	PrintToLog("-----");
+	PrintToLog("Map Start: [%s]", sMap);
+	#endif
+
 	SaveDefaultEnvSunSize();
 
 	g_bMapStarted = true;
@@ -441,11 +451,6 @@ public void OnMapStart()
 		g_iStarted = 1;
 	else if( g_iStarted == 1 )
 		g_iStarted = 2;
-
-	if( g_iCvarRand || (g_iCvarRand == 0 && IsStartOrEndMap() && !IsFinalMap()) )
-		g_iRandom = 0;
-
-	// PrintToServer("g_iCvarRand/g_iRandom: %i/%i", g_iCvarRand, g_iRandom);
 
 	g_iLaserMaterial = PrecacheModel("materials/sprites/laserbeam.vmt");
 	g_iHaloMaterial = PrecacheModel("materials/sprites/halo01.vmt");
@@ -499,13 +504,8 @@ public void OnMapStart()
 	}
 
 	DownloadSkyboxes();
-
-	#if DEBUG_LOGS
-	char sMap[64];
-	GetCurrentMap(sMap, sizeof(sMap));
-	PrintToLog("-----");
-	PrintToLog("Map Start: [%s]", sMap);
-	#endif
+	if( g_bCvarAllow )
+		SetSkyname();
 }
 
 void DownloadSkyboxes()
@@ -526,6 +526,10 @@ void DownloadSkyboxes()
 			{
 				if ( !IsDefaultSkybox(sSkybox) )
 				{
+					#if DEBUG_LOGS
+					PrintToLog("DownloadSkyboxes: [%s]", sSkybox);
+					#endif
+
 					DownloadSkybox(sSkybox);
 				}
 			}
@@ -612,6 +616,8 @@ public void OnMapEnd()
 	g_iReset = 0;
 	ResetPlugin();
 	g_iStarted = 0;
+
+	g_bRandom = false;
 
 	#if DEBUG_LOGS
 	GetCurrentMap(sMap, sizeof(sMap));
@@ -853,6 +859,14 @@ void ResetFog()
 // ====================================================================================================
 //					EVENTS
 // ====================================================================================================
+public void OnClientConnected(int client)
+{
+	if( !g_bMapStarted )
+	{
+		SetSkyname();
+	}
+}
+
 public void OnClientPutInServer(int client)
 {
 	switch( g_iCfgWind )
@@ -1515,6 +1529,14 @@ void ConVarChanged_SkyBox(Handle convar, const char[] oldValue, const char[] new
 
 void SetSkyname()
 {
+	if( !g_bRandom )
+	{
+		g_bRandom = true;
+
+		if( g_iCvarRand || (g_iCvarRand == 0 && IsStartOrEndMap() && !IsFinalMap()) )
+			g_iRandom = 0;
+	}
+
 	if( g_bCvarAllow )
 	{
 		KeyValues hFile = ConfigOpen();
@@ -1534,6 +1556,9 @@ void SetSkyname()
 				}
 
 				hFile.GetString("skybox", g_sSkyBox, sizeof(g_sSkyBox));
+				#if DEBUG_LOGS
+				PrintToLog("SetSkyname: A [%s]", g_sSkyBox);
+				#endif
 
 				if( completed_jump == 1 && ConfigJumpB(hFile, sMap) )
 				{
@@ -1544,11 +1569,19 @@ void SetSkyname()
 					}
 
 					hFile.GetString("skybox", g_sSkyBox, sizeof(g_sSkyBox), g_sSkyBox);
+
+					#if DEBUG_LOGS
+					PrintToLog("SetSkyname: B [%s]", g_sSkyBox);
+					#endif
 				}
 
 				if( g_sSkyBox[0] )
 				{
 					g_hCvarSkyName.SetString(g_sSkyBox);
+
+					#if DEBUG_LOGS
+					PrintToLog("SetSkyname: C [%s]", g_sSkyBox);
+					#endif
 				}
 			}
 
@@ -2752,8 +2785,8 @@ int ConfigJumpA(KeyValues hFile, char sMap[64])
 
 		#if DEBUG_LOGS
 		PrintToLog("ConfigJumpA [%s]", sMap);
-		PrintToServer("g_iRandom: %i", g_iRandom);
-		PrintToServer("sJump[0]: %s", sJump[0]);
+		PrintToLog("g_iRandom: A %i", g_iRandom);
+		PrintToLog("sJump[0]: A %s", sJump[0]);
 		#endif
 
 		if( sJump[0] )
@@ -2803,6 +2836,8 @@ int ConfigJumpA(KeyValues hFile, char sMap[64])
 
 		#if DEBUG_LOGS
 		PrintToLog("ConfigJumpA End [%s] [%s]", sMap, sJump);
+		PrintToLog("g_iRandom: B %i", g_iRandom);
+		PrintToLog("sJump[0]: B %s", sJump[0]);
 		#endif
 	}
 
@@ -3155,6 +3190,7 @@ void LoadStorm(int client = 0)
 			}
 
 			SetSkyname();
+
 			if( g_iPresetLoad == 0 )
 				CreateTimer(0.1, TimerSetSkyCam);
 			else
@@ -4798,7 +4834,7 @@ void PrintToLog(const char[] format, any ...)
 	VFormat(buffer, sizeof(buffer), format, 2);
 
 	File file;
-	char sFile[PLATFORM_MAX_PATH], sTime[256];
+	static char sFile[PLATFORM_MAX_PATH], sTime[32];
 	FormatTime(sTime, sizeof(sTime), "%Y%m%d");
 	BuildPath(Path_SM, sFile, sizeof(sFile), DEBUG_PATH);
 	file = OpenFile(sFile, "a+");
