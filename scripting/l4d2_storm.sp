@@ -18,7 +18,7 @@
 
 
 
-#define PLUGIN_VERSION		"1.20"
+#define PLUGIN_VERSION		"1.21"
 
 /*======================================================================================
 	Plugin Info:
@@ -31,6 +31,9 @@
 
 ========================================================================================
 	Change Log:
+
+1.21 (29-Sep-2026)
+	- Fixed the maps default precipitation not resetting. Thanks to "WarGreymon92" for reporting.
 
 1.20 (04-Jun-2026)
 	- Recompiled plugin on SourceMod 1.11.0.6970 (the .SMX provided in the archive).
@@ -224,6 +227,23 @@
 #define	MAX_FOG				16
 
 
+// Save "func_precipitation" for reset
+ArrayList g_alPrecipitation;
+enum struct StructFuncPrecipitation
+{
+	int hammerid;
+	int rendercolor;
+	int preciptype;
+	float minSpeed;
+	float maxSpeed;
+	float origin[3];
+	float vMaxs[3];
+	float vMins[3];
+	char model[64];
+	char targetname[64];
+}
+
+// Various
 enum
 {
 	STATE_OFF,
@@ -752,6 +772,8 @@ void ResetPlugin()
 			g_iRains[i] = 0;
 		}
 	}
+
+	ResetPrecipitation();
 
 	if( IsValidEntRef(g_iFogVolume) )
 		RemoveEntity(g_iFogVolume);
@@ -2057,6 +2079,8 @@ Action CmdRain(int client, int args)
 			CreateSnow();
 		}
 
+		ResetPrecipitation();
+
 		if( client )
 			ReplyToCommand(client, "%sRain has been turned '\x03Off\x05'", CHAT_TAG);
 		else
@@ -2089,6 +2113,8 @@ Action CmdSnow(int client, int args)
 	{
 		RemoveEntity(g_iSnow);
 		g_iSnow = 0;
+
+		ResetPrecipitation();
 
 		if( client )
 			ReplyToCommand(client, "%sSnow has been turned '\x03Off\x05'", CHAT_TAG);
@@ -4474,6 +4500,59 @@ void CreateFog()
 // ====================================================================================================
 //					func_precipitation
 // ====================================================================================================
+//					Restore precipitation
+// ====================================================================================================
+void ResetPrecipitation()
+{
+	if( g_alPrecipitation == null ) return;
+
+	int entity;
+	int size = g_alPrecipitation.Length;
+	StructFuncPrecipitation aStruct;
+
+	static char sTemp[64];
+
+	for( int i = 0; i < size; i++ )
+	{
+		g_alPrecipitation.GetArray(i, aStruct, sizeof(aStruct));
+
+		entity = CreateEntityByName("func_precipitation");
+		if( entity != -1 )
+		{
+			IntToString(aStruct.hammerid, sTemp, sizeof(sTemp));
+			DispatchKeyValue(entity, "hammerid", sTemp);
+			IntToString(aStruct.rendercolor, sTemp, sizeof(sTemp));
+			DispatchKeyValue(entity, "rendercolor", sTemp);
+			IntToString(aStruct.preciptype, sTemp, sizeof(sTemp));
+			DispatchKeyValue(entity, "preciptype", sTemp);
+			FloatToString(aStruct.minSpeed, sTemp, sizeof(sTemp));
+			DispatchKeyValue(entity, "minSpeed", sTemp);
+			FloatToString(aStruct.maxSpeed, sTemp, sizeof(sTemp));
+			DispatchKeyValue(entity, "maxSpeed", sTemp);
+			DispatchKeyValue(entity, "model", aStruct.model);
+
+			// char buffer[128];
+			// GetCurrentMap(sTemp, sizeof(sTemp));
+			// Format(sTemp, sizeof(sTemp), "maps/%s.bsp", sTemp);
+
+			// DispatchKeyValue(entity, "model", buffer);
+			DispatchKeyValue(entity, "targetname", aStruct.targetname);
+
+			TeleportEntity(entity, aStruct.origin, NULL_VECTOR, NULL_VECTOR);
+			DispatchSpawn(entity);
+
+			SetEntProp(entity, Prop_Send, "m_clrRender", aStruct.rendercolor);
+			SetEntPropVector(entity, Prop_Send, "m_vecMins", aStruct.vMins);
+			SetEntPropVector(entity, Prop_Send, "m_vecMaxs", aStruct.vMaxs);
+		}
+	}
+
+	delete g_alPrecipitation;
+}
+
+
+
+// ====================================================================================================
 //					Create Rain
 // ====================================================================================================
 void CreateRain()
@@ -4483,11 +4562,32 @@ void CreateRain()
 	#endif
 
 	int value, entity = -1;
+	float vPos[3], vMins[3], vMaxs[3];
+	StructFuncPrecipitation aStruct;
+
 	while( (entity = FindEntityByClassname(entity, "func_precipitation")) != INVALID_ENT_REFERENCE )
 	{
 		value = GetEntProp(entity, Prop_Data, "m_nPrecipType");
+
 		if( value < 0 || value == 4 || value > 5 )
+		{
+			if( g_alPrecipitation == null ) g_alPrecipitation = new ArrayList(sizeof(StructFuncPrecipitation));
+
+			aStruct.hammerid = GetEntProp(entity, Prop_Data, "m_iHammerID");
+			aStruct.minSpeed = GetEntPropFloat(entity, Prop_Data, "m_minSpeed");
+			aStruct.maxSpeed = GetEntPropFloat(entity, Prop_Data, "m_maxSpeed");
+			aStruct.rendercolor = GetEntProp(entity, Prop_Data, "m_clrRender");
+			aStruct.preciptype = value;
+			GetEntPropVector(entity, Prop_Send, "m_vecOrigin", aStruct.origin);
+			GetEntPropVector(entity, Prop_Send, "m_vecMaxs", aStruct.vMaxs);
+			GetEntPropVector(entity, Prop_Send, "m_vecMins", aStruct.vMins);
+			GetEntPropString(entity, Prop_Data, "m_ModelName", aStruct.model, sizeof(aStruct.model));
+			GetEntPropString(entity, Prop_Data, "m_iName", aStruct.targetname, sizeof(aStruct.targetname));
+
+			g_alPrecipitation.PushArray(aStruct);
+
 			RemoveEntity(entity);
+		}
 	}
 
 	for( int i = 0; i < g_iCfgRain; i++ )
@@ -4510,20 +4610,18 @@ void CreateRain()
 			DispatchKeyValue(entity, "renderamt", "100");
 			g_iRains[i] = EntIndexToEntRef(entity);
 
-			float vMins[3], vMaxs[3];
 			GetEntPropVector(0, Prop_Data, "m_WorldMins", vMins);
 			GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
 			SetEntPropVector(entity, Prop_Send, "m_vecMins", vMins);
 			SetEntPropVector(entity, Prop_Send, "m_vecMaxs", vMaxs);
 
-			float vBuff[3];
-			vBuff[0] = vMins[0] + vMaxs[0];
-			vBuff[1] = vMins[1] + vMaxs[1];
-			vBuff[2] = vMins[2] + vMaxs[2];
+			vPos[0] = vMins[0] + vMaxs[0];
+			vPos[1] = vMins[1] + vMaxs[1];
+			vPos[2] = vMins[2] + vMaxs[2];
 
 			DispatchSpawn(entity);
 			ActivateEntity(entity);
-			TeleportEntity(entity, vBuff, NULL_VECTOR, NULL_VECTOR);
+			TeleportEntity(entity, vPos, NULL_VECTOR, NULL_VECTOR);
 		}
 		else
 			LogError("Failed to create Rain %d 'func_precipitation'", i+1);
@@ -4546,16 +4644,25 @@ void CreateSnow()
 	#endif
 
 	int value, entity = -1;
+
 	while( (entity = FindEntityByClassname(entity, "func_precipitation")) != INVALID_ENT_REFERENCE )
 	{
 		value = GetEntProp(entity, Prop_Data, "m_nPrecipType");
 		if( value < 0 || value == 4 || value > 5 )
-			RemoveEntity(entity);
+		{
+			if( g_alPrecipitation == null ) g_alPrecipitation = new ArrayList();
+
+			g_alPrecipitation.Push(EntIndexToEntRef(entity));
+			g_alPrecipitation.Push(GetEntProp(entity, Prop_Send, "m_clrRender"));
+
+			SetEntProp(entity, Prop_Send, "m_clrRender", 0);
+		}
 	}
 
 	entity = CreateEntityByName("func_precipitation");
 	if( entity != -1 )
 	{
+		float vPos[3], vMins[3], vMaxs[3];
 		char buffer[128];
 		GetCurrentMap(buffer, sizeof(buffer));
 		Format(buffer, sizeof(buffer), "maps/%s.bsp", buffer);
@@ -4568,7 +4675,6 @@ void CreateSnow()
 
 		g_iSnow = EntIndexToEntRef(entity);
 
-		float vBuff[3], vMins[3], vMaxs[3];
 		GetEntPropVector(0, Prop_Data, "m_WorldMins", vMins);
 		GetEntPropVector(0, Prop_Data, "m_WorldMaxs", vMaxs);
 		SetEntPropVector(g_iSnow, Prop_Send, "m_vecMins", vMins);
@@ -4580,21 +4686,21 @@ void CreateSnow()
 			if( !found && IsClientInGame(i) && GetClientTeam(i) == 2 && IsPlayerAlive(i) )
 			{
 				found = true;
-				GetClientAbsOrigin(i, vBuff);
+				GetClientAbsOrigin(i, vPos);
 				break;
 			}
 		}
 
 		if( !found )
 		{
-			vBuff[0] = vMins[0] + vMaxs[0];
-			vBuff[1] = vMins[1] + vMaxs[1];
-			vBuff[2] = vMins[2] + vMaxs[2];
+			vPos[0] = vMins[0] + vMaxs[0];
+			vPos[1] = vMins[1] + vMaxs[1];
+			vPos[2] = vMins[2] + vMaxs[2];
 		}
 
 		DispatchSpawn(g_iSnow);
 		ActivateEntity(g_iSnow);
-		TeleportEntity(g_iSnow, vBuff, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(g_iSnow, vPos, NULL_VECTOR, NULL_VECTOR);
 	}
 	else
 		LogError("Failed to create Snow %d 'func_precipitation'");
@@ -4889,6 +4995,8 @@ void PrintToLog(const char[] format, any ...)
 {
 	static char buffer[1024];
 	VFormat(buffer, sizeof(buffer), format, 2);
+
+	// PrintToServer("%s", buffer);
 
 	File file;
 	static char sFile[PLATFORM_MAX_PATH], sTime[32];
